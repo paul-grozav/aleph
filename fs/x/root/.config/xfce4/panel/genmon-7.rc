@@ -1,0 +1,6 @@
+Command=/aleph/aleph.sh --x__xfce__panel__ram
+UseLabel=0
+Text=(genmon)
+UpdatePeriod=1000
+Font=Sans 13
+

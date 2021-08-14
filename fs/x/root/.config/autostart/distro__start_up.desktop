@@ -1,0 +1,12 @@
+[Desktop Entry]
+Encoding=UTF-8
+Version=0.9.4
+Type=Application
+Name=distro__start_up
+Comment=Start GUI apps after login
+Exec=/aleph/aleph.sh --x__xfce__start
+OnlyShowIn=XFCE;
+StartupNotify=false
+Terminal=false
+Hidden=false
+
