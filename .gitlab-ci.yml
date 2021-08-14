@@ -1,0 +1,21 @@
+image: debian:10.10
+
+build:
+  stage: build
+  script:
+    - cat /etc/os-release
+    - cat /etc/debian_version
+    - ls -la /
+    - mount
+    - uname -a
+    - ip addr
+    - ip route
+    - whoami
+    - id
+#  artifacts:
+#    paths:
+#      - mybinary
+      # depending on your build setup it's most likely a good idea to cache outputs to reduce the build time
+      # cache:
+      #   paths:
+      #     - "*.o"
