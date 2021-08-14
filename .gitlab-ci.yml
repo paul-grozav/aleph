@@ -6,10 +6,11 @@ build:
     - docker
     - linux
   script:
-    - echo "${aleph_ci_build_target}"
-#  artifacts:
-#    paths:
-#      - mybinary
+    - echo "${aleph_ci_build_target}" > /artifact.txt
+  artifacts:
+    paths:
+      - /artifact.txt
+    expire_in: 1 hour
       # depending on your build setup it's most likely a good idea to cache outputs to reduce the build time
       # cache:
       #   paths:
