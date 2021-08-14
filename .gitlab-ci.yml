@@ -7,6 +7,7 @@ build:
     - linux
   script:
     - echo "${aleph_ci_build_target}" > /artifact.txt
+    - ls -la /artifact.txt
   artifacts:
     paths:
       - /artifact.txt
