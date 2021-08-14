@@ -18,6 +18,7 @@ build:
     - apt-get update && apt-get install -y debootstrap squashfs-tools xorriso isolinux syslinux-efi grub-pc-bin grub-efi-amd64-bin mtools dosfstools
     - mkdir -p /distribution_content/chroot
     - debootstrap --arch=amd64 --components=main,non-free --variant=minbase stable /distribution_content/chroot http://ftp.ro.debian.org/debian/
+    - ( echo "echo into chroot. all good" ) | chroot /distribution_content/chroot
 #  artifacts:
 #    paths:
 #      - mybinary
