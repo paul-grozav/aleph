@@ -2,6 +2,9 @@ image: debian:10.10
 
 build:
   stage: build
+  tags:
+    - docker
+    - linux
   script:
     - cat /etc/os-release
     - cat /etc/debian_version
