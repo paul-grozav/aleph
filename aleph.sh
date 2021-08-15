@@ -31,10 +31,15 @@ fi &&
 
 
 
+
+
 # ============================================================================ #
-# Create builder docker container
 # ============================================================================ #
-function core__builder_create()
+# ============================================================================ #
+# Utils
+# If the caller function is not running in container, then create the container
+# and call it again
+function run_in_container()
 {(
   if [ ! -f ${container_marker} ]; then
     docker stop -t0 ${project_name}_core_builder ;
@@ -45,20 +50,29 @@ function core__builder_create()
     fi &&
     # Privileged is required to start docker in chroot inside the container
     #  --privileged \
-    time ( echo "/mnt/aleph.sh --core__builder_create" |
-    docker run -it \
+    # tty required for input
+    #  --tty \
+#     --volume ${current_dir}/distribution_content:/distribution_content:rw,dev\
+    time ( echo "cd /mnt && ./aleph.sh --${FUNCNAME[1]}" |
+    docker run \
+      --interactive \
       --privileged \
       --name=${project_name}_core_builder \
+      --volume ${current_dir}:/mnt:rw,dev \
       --env is_podman_available="${is_podman_available}" \
-      --volume ${current_dir}:/mnt:ro \
-      --volume ${current_dir}/distribution_content:/distribution_content:rw,dev\
       --entrypoint "/bin/bash" \
       ${debian_base_image} ) ;
-    exit 0
+    # exit 1 so that the caller function does not continue outside the container
+    exit 1
   fi
-
+  # Fix dns issue in podman
+  gw_ip="$(ip route | grep -w default | awk '{print $3}')" &&
+  echo "nameserver ${gw_ip}" > /etc/resolv.conf &&
   exit 0
 )}
+# ============================================================================ #
+# ============================================================================ #
+# ============================================================================ #
 
 
 
@@ -98,6 +112,10 @@ function core__build()
     fi
     exit 0
   fi
+  # Fix dns issue in podman
+  gw_ip="$(ip route | grep -w default | awk '{print $3}')" &&
+  echo "nameserver ${gw_ip}" > /etc/resolv.conf &&
+
   echo "Building Aleph Core ..." &&
   root_dir="$(pwd)" &&
   if [ "${root_dir}" == "/" ] ; then
@@ -115,9 +133,6 @@ function core__build()
     rm -rf ${root_dir}/* && echo "I cleared it"
 #    exit 1
   fi
-
-  gw_ip="$(ip route | grep -w default | awk '{print $3}')" &&
-  echo "nameserver ${gw_ip}" > /etc/resolv.conf &&
 
   core__build__squashfs &&
   exit 0
@@ -232,6 +247,13 @@ function core__build()
 # ============================================================================ #
 function core__build__squashfs()
 {(
+  run_in_container ;
+  exit_code="${?}" &&
+  if [ "${exit_code}" == "1" ]
+  then
+    exit 0
+  fi &&
+
   echo "Building Aleph Core - squashfs ..." &&
   root_dir="$(pwd)" &&
   if [ "${root_dir}" == "/" ] ; then
@@ -247,8 +269,16 @@ function core__build__squashfs()
     squashfs-tools \
   &&
 
-  echo "Building distribution in path=${root_dir}" &&
-  ( [ ! -d ${root_dir} ] && mkdir ${root_dir} || true ) &&
+  # Clean chroot dir
+  if [ -d ${root_dir}/chroot ]
+  then
+    echo "Clearing ${root_dir}/chroot/* ..." &&
+    rm -rf ${root_dir}/chroot/*
+  else
+    echo "Creating directory ${root_dir}/chroot ..." &&
+    mkdir -p ${root_dir}/chroot
+  fi &&
+
   echo "Creating minimal debian system (debootstrap)  ..." &&
   debootstrap \
     --arch=amd64 \
@@ -273,6 +303,9 @@ function core__build__squashfs()
   echo "Compress the chroot environment into a Squash filesystem." &&
   mksquashfs ${root_dir}/chroot ${squash_fs_file} -e boot &&
 
+  echo "Removing chroot dir ${root_dir}/chroot ..." &&
+  rm -rf ${root_dir}/chroot &&
+
   echo "Removing packages..." &&
   DEBIAN_FRONTEND=noninteractive apt-get purge -y \
     debootstrap \
@@ -288,11 +321,12 @@ function core__build__squashfs()
 
 
 # ============================================================================ #
-# Build the core squashfs - setup the system
+# PRIVATE: Build the core squashfs - setup the system
 # ============================================================================ #
 function core__build__squashfs__setup()
 {(
     set -x && # Start debugging
+    cat /etc/resolv.conf &&
 
     echo "Setting hostname ..." &&
     echo "aleph" > /etc/hostname &&
@@ -1032,8 +1066,8 @@ function x__xfce__start()
 # ============================================================================ #
 function print_help()
 {
-  echo "--core__builder_create   Create builder container for the core." &&
   echo "--core__build            Build the core iso inside the container." &&
+  echo "--core__build__squashfs  Build the core squashfs." &&
   echo "--core__emulate          Boot the distribution iso inside qemu." &&
   echo "--core__start            Start programs once the distribution booted."&&
   echo "--x__build               Build the aleph container." &&
@@ -1058,7 +1092,6 @@ fi &&
 # Case
 if [ $1 ]; then
   case "$1" in
-    --core__builder_create) core__builder_create ; exit $? ;;
     --core__build) core__build ; exit $? ;;
     --core__build__squashfs) core__build__squashfs ; exit $? ;;
     --core__emulate) core__emulate ; exit $? ;;
