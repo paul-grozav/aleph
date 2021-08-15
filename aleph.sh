@@ -13,10 +13,21 @@ debian_base_image=debian:10.10 &&
 # docker:
 container_marker=/.dockerenv &&
 # podman (requires to be ran as root):
-#if command -v podman &> /dev/null
-#then
-#  function docker(){ podman ${@} ; } && container_marker=/run/.containerenv
-#fi &&
+if [ -z ${is_podman_available+x} ]
+then
+  echo "is_podman_available is unset. trying to detect it"
+  if command -v podman &> /dev/null
+  then
+    is_podman_available="1"
+  fi
+else
+  # inside container, it will be passed on and available from host
+  echo "is_podman_available is set to '${is_podman_available}'"
+fi
+if [ "${is_podman_available}" == "1" ]
+then
+  function docker(){ podman ${@} ; } && container_marker=/run/.containerenv
+fi &&
 
 
 
@@ -38,6 +49,7 @@ function core__builder_create()
     docker run -it \
       --privileged \
       --name=${project_name}_core_builder \
+      --env is_podman_available="${is_podman_available}" \
       --volume ${current_dir}:/mnt:ro \
       --volume ${current_dir}/distribution_content:/distribution_content:rw,dev\
       --entrypoint "/bin/bash" \
@@ -75,6 +87,7 @@ function core__build()
       --privileged \
       --name=${project_name}_core_builder \
       --volume ${current_dir}:/mnt:rw,dev \
+      --env is_podman_available="${is_podman_available}" \
       --entrypoint "/bin/bash" \
       ${debian_base_image} ) ;
 
