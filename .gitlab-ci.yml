@@ -6,13 +6,10 @@ build:
     - docker
     - linux
   script:
-    - pwd
-    - echo "${aleph_ci_build_target}" > artifact.txt
-    - ls -la artifact.txt
     - ./aleph.sh --core__build
   artifacts:
     paths:
-      - artifact.txt
+      - filesystem.squashfs
     expire_in: 1 hour
       # depending on your build setup it's most likely a good idea to cache outputs to reduce the build time
       # cache:

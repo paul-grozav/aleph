@@ -258,7 +258,7 @@ function core__build__squashfs()
     echo "Installing kernel and packages ..." &&
 #    apt-cache search linux-image &&
     DEBIAN_FRONTEND=noninteractive apt-get update &&
-    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/distribution_content/chroot_v1/usr/lib/systemd" &&
+    # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/distribution_content/chroot/usr/lib/systemd" &&
     # for PXE boot, i don't need to install the kernel: linux-image-amd64 it probably uses init-ram-disk, not needed: live-boot, but systemd-sysv is required as it is the init system
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y systemd-sysv &&
     DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
