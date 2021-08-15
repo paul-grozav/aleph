@@ -9,6 +9,7 @@ build:
     - pwd
     - echo "${aleph_ci_build_target}" > artifact.txt
     - ls -la artifact.txt
+    - ./aleph.sh --core__build
   artifacts:
     paths:
       - artifact.txt
