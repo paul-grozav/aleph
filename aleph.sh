@@ -13,7 +13,11 @@ debian_base_image=debian:10.10 &&
 # docker:
 container_marker=/.dockerenv &&
 # podman (requires to be ran as root):
-#function docker(){ podman ${@} ; } && container_marker=/run/.containerenv &&
+if command -v podman &> /dev/null
+then
+  function docker(){ podman ${@} ; } && container_marker=/run/.containerenv
+fi &&
+
 
 
 # ============================================================================ #
