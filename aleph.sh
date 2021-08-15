@@ -3,18 +3,16 @@
 # Author: Tancredi-Paul Grozav <paul@grozav.info>
 # ============================================================================ #
 set -x && # Start debugging
+project_root="$(git rev-parse --show-toplevel)" &&
 current_dir="$(cd $(dirname $0) ; pwd)" &&
 project_name="aleph" &&
 version="0.1.9" &&
+debian_base_image=debian:10.10 &&
 
-# podman (requires to be ran as root):
-#function docker()
-#{
-#  podman ${@}
-#}
-#container_marker=/run/.containerenv &&
 # docker:
 container_marker=/.dockerenv &&
+# podman (requires to be ran as root):
+function docker(){ podman ${@} ; } && container_marker=/run/.containerenv &&
 
 
 # ============================================================================ #
@@ -22,8 +20,6 @@ container_marker=/.dockerenv &&
 # ============================================================================ #
 function core__builder_create()
 {(
-  # Privileged is required to start docker in chroot inside the container
-#    --privileged \
   if [ ! -f ${container_marker} ]; then
     docker stop -t0 ${project_name}_core_builder ;
     docker rm ${project_name}_core_builder ;
@@ -31,30 +27,19 @@ function core__builder_create()
     then
       mkdir ${current_dir}/distribution_content
     fi &&
+    # Privileged is required to start docker in chroot inside the container
+    #  --privileged \
     time ( echo "/mnt/aleph.sh --core__builder_create" |
-    docker run -i \
+    docker run -it \
       --privileged \
       --name=${project_name}_core_builder \
       --volume ${current_dir}:/mnt:ro \
       --volume ${current_dir}/distribution_content:/distribution_content:rw,dev\
       --entrypoint "/bin/bash" \
-      debian:10.6 ) ;
+      ${debian_base_image} ) ;
     exit 0
   fi
 
-  # Install stuff needed to build the core iso/OS
-  apt-get update &&
-  apt-get install -y \
-    debootstrap \
-    squashfs-tools \
-    xorriso \
-    isolinux \
-    syslinux-efi \
-    grub-pc-bin \
-    grub-efi-amd64-bin \
-    mtools \
-    dosfstools \
-  &&
   exit 0
 )}
 
@@ -68,9 +53,26 @@ function core__builder_create()
 function core__build()
 {(
   if [ ! -f ${container_marker} ]; then
-    docker start ${project_name}_core_builder ;
-    time docker exec -it ${project_name}_core_builder \
-      bash /mnt/aleph.sh --core__build ;
+    docker stop -t0 ${project_name}_core_builder ;
+    docker rm ${project_name}_core_builder ;
+    if [ ! -d ${current_dir}/distribution_content ]
+    then
+      mkdir ${current_dir}/distribution_content
+    fi &&
+    # Privileged is required to start docker in chroot inside the container
+    #  --privileged \
+    # tty required for input
+    #  --tty \
+    time ( echo "/mnt/aleph.sh --core__build" |
+    docker run \
+      --interactive \
+      --privileged \
+      --name=${project_name}_core_builder \
+      --volume ${current_dir}:/mnt:ro \
+      --volume ${current_dir}/distribution_content:/distribution_content:rw,dev\
+      --entrypoint "/bin/bash" \
+      ${debian_base_image} ) ;
+
     iso_path="${current_dir}/distribution_content/debian-custom.iso" &&
     if [ -f ${iso_path} ]; then
       echo "Copying generated .iso as version ${version} ..." &&
@@ -79,13 +81,153 @@ function core__build()
     exit 0
   fi
   echo "Building Aleph Core ..." &&
-  root_dir="/distribution_content" &&
+  root_dir="$(pwd)" &&
+  if [ "${root_dir}" == "/" ] ; then
+    root_dir="/distribution_content"
+  else
+    root_dir="${root_dir}/distribution_content"
+  fi &&
+
+  if [ ! -d ${root_dir} ] ; then
+    mkdir -p ${root_dir}
+  fi &&
 
   if [ "$(ls -A ${root_dir})" ]; then
     echo "root_dir=${root_dir} is not empty. Please clear it before rebuilding"
     rm -rf ${root_dir}/* && echo "I cleared it"
 #    exit 1
   fi
+
+  gw_ip="$(ip route | grep -w default | awk '{print $3}')" &&
+  echo "nameserver ${gw_ip}" > /etc/resolv.conf &&
+
+  core__build__squashfs &&
+  exit 0
+
+  echo -n "Create directories that will contain files for our live" &&
+  echo " environment files and scratch files." &&
+  mkdir -p \
+    ${root_dir}/{staging/{EFI/boot,boot/grub/x86_64-efi,isolinux,live},tmp} &&
+
+  echo "Adding the Squash filesystem." &&
+  mv ${root_dir}/filesystem.squashfs ${root_dir}/staging/live/ &&
+
+  echo -n "Copy the kernel and initramfs from inside the chroot to the live" &&
+  echo " directory." &&
+  cp ${root_dir}/chroot/boot/vmlinuz-* ${root_dir}/staging/live/vmlinuz &&
+  cp ${root_dir}/chroot/boot/initrd.img-* ${root_dir}/staging/live/initrd &&
+
+  echo "Create an ISOLINUX (Syslinux) boot menu." &&
+  echo "This boot menu is used when booting in BIOS/legacy mode." &&
+  cp    /mnt/fs/core/staging/isolinux/isolinux.cfg \
+    ${root_dir}/staging/isolinux/isolinux.cfg &&
+
+  echo "Create a second, similar, boot menu for GRUB." &&
+  echo "This boot menu is used when booting in EFI/UEFI mode." &&
+  cp    /mnt/fs/core/staging/boot/grub/grub.cfg \
+    ${root_dir}/staging/boot/grub/grub.cfg &&
+
+  echo -n "Create a third boot config. This config will be an early" &&
+  echo -n " configuration file that is embedded inside GRUB in the EFI" &&
+  echo -n " partition. This finds the root and# loads the GRUB config from" &&
+  echo " there." &&
+  cp    /mnt/fs/core/tmp/grub-standalone.cfg \
+    ${root_dir}/tmp/grub-standalone.cfg &&
+
+  echo -n "Create a special file in staging named DEBIAN_CUSTOM. This file" &&
+  echo -n " will be used to help GRUB figure out which device contains our" &&
+  echo -n " live filesystem. This file name must be unique and must match" &&
+  echo " the file name in our grub.cfg config." &&
+  touch ${root_dir}/staging/DEBIAN_CUSTOM &&
+
+  echo "Prepare Boot Loader Files" &&
+  echo "Copy BIOS/legacy boot required files into our workspace." &&
+  cp /usr/lib/ISOLINUX/isolinux.bin "${root_dir}/staging/isolinux/" &&
+  cp /usr/lib/syslinux/modules/bios/* "${root_dir}/staging/isolinux/" &&
+
+  echo "Copy EFI/modern boot required files into our workspace." &&
+  cp -r /usr/lib/grub/x86_64-efi/* "${root_dir}/staging/boot/grub/x86_64-efi/"&&
+
+  echo "Generate an EFI bootable GRUB image." &&
+  grub-mkstandalone \
+    --format=x86_64-efi \
+    --output=${root_dir}/tmp/bootx64.efi \
+    --locales="" \
+    --fonts="" \
+    "boot/grub/grub.cfg=${root_dir}/tmp/grub-standalone.cfg" \
+  &&
+
+  echo "Create a FAT16 UEFI boot disk image containing the EFI bootloader." &&
+  # Note the use of the mmd and mcopy commands to copy our UEFI boot
+  # loader named bootx64.efi.
+  (
+    cd ${root_dir}/staging/EFI/boot && \
+    dd if=/dev/zero of=efiboot.img bs=1M count=20 && \
+    mkfs.vfat efiboot.img && \
+    mmd -i efiboot.img efi efi/boot && \
+    mcopy -vi efiboot.img ${root_dir}/tmp/bootx64.efi ::efi/boot/
+  ) &&
+
+  echo "Create Bootable ISO/CD" &&
+  xorriso \
+    -as mkisofs \
+    -iso-level 3 \
+    -o "${root_dir}/debian-custom.iso" \
+    -full-iso9660-filenames \
+    -volid "DEBIAN_CUSTOM" \
+    -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
+    -eltorito-boot \
+        isolinux/isolinux.bin \
+        -no-emul-boot \
+        -boot-load-size 4 \
+        -boot-info-table \
+        --eltorito-catalog isolinux/isolinux.cat \
+    -eltorito-alt-boot \
+        -e /EFI/boot/efiboot.img \
+        -no-emul-boot \
+        -isohybrid-gpt-basdat \
+    -append_partition 2 0xef ${root_dir}/staging/EFI/boot/efiboot.img \
+    "${root_dir}/staging" \
+  &&
+
+# Add this to /etc/grub.d/40_custom to add the .iso to your existing GRUB.
+# Make sure you set the isofile var to the path relative to the partition.
+# Use "ls (hd0,2)" in GRUB's console to inspect the filesystem.
+
+#menuentry "Aleph ISO" --class os {
+#  insmod part_gpt
+#  set isofile="/v0.1.8.iso"
+#  loopback loop (hd0,gpt6)$isofile
+#  linux (loop)/live/vmlinuz boot=live findiso=${isofile}
+#  initrd (loop)/live/initrd
+#}
+
+  exit 0
+)}
+
+
+
+
+
+# ============================================================================ #
+# Build the core squashfs
+# ============================================================================ #
+function core__build__squashfs()
+{(
+  echo "Building Aleph Core - squashfs ..." &&
+  root_dir="$(pwd)" &&
+  if [ "${root_dir}" == "/" ] ; then
+    root_dir="/distribution_content"
+  else
+    root_dir="${root_dir}/distribution_content"
+  fi &&
+
+  # Install stuff needed to build the core iso/OS
+  apt-get update &&
+  DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    debootstrap \
+    squashfs-tools \
+  &&
 
   echo "Building distribution in path=${root_dir}" &&
   ( [ ! -d ${root_dir} ] && mkdir ${root_dir} || true ) &&
@@ -112,6 +254,11 @@ function core__build()
 #    apt-cache search linux-image &&
     apt-get update &&
     export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/distribution_content/chroot_v1/usr/lib/systemd" &&
+    # for PXE boot, i don't need to install the kernel: linux-image-amd64 it probably uses init-ram-disk, not needed: live-boot, but systemd-sysv is required as it is the init system
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y systemd-sysv &&
+    DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
+    DEBIAN_FRONTEND=noninteractive apt-get clean &&
+    exit 0
     (
       packages="" &&
       # See contents of package:
@@ -265,104 +412,20 @@ EOF
   echo -n "Copying this script to /root/aleph.sh to be called at startup ..." &&
   cp /mnt/aleph.sh ${root_dir}/chroot/root/aleph.sh &&
 
-  echo -n "Create directories that will contain files for our live" &&
-  echo " environment files and scratch files." &&
-  mkdir -p \
-    ${root_dir}/{staging/{EFI/boot,boot/grub/x86_64-efi,isolinux,live},tmp} &&
-
+  squash_fs_file="${root_dir}/filesystem.squashfs" &&
+  echo "Removing previous Squash filesystem file: ${squash_fs_file}" &&
+  ( [ -f ${squash_fs_file} ] && rm -f ${squash_fs_file} || true ) &&
+  
   echo "Compress the chroot environment into a Squash filesystem." &&
-  mksquashfs ${root_dir}/chroot_v1 ${root_dir}/staging/live/filesystem.squashfs \
-    -e boot &&
-
-  echo -n "Copy the kernel and initramfs from inside the chroot to the live" &&
-  echo " directory." &&
-  cp ${root_dir}/chroot/boot/vmlinuz-* ${root_dir}/staging/live/vmlinuz &&
-  cp ${root_dir}/chroot/boot/initrd.img-* ${root_dir}/staging/live/initrd &&
-
-  echo "Create an ISOLINUX (Syslinux) boot menu." &&
-  echo "This boot menu is used when booting in BIOS/legacy mode." &&
-  cp    /mnt/fs/core/staging/isolinux/isolinux.cfg \
-    ${root_dir}/staging/isolinux/isolinux.cfg &&
-
-  echo "Create a second, similar, boot menu for GRUB." &&
-  echo "This boot menu is used when booting in EFI/UEFI mode." &&
-  cp    /mnt/fs/core/staging/boot/grub/grub.cfg \
-    ${root_dir}/staging/boot/grub/grub.cfg &&
-
-  echo -n "Create a third boot config. This config will be an early" &&
-  echo -n " configuration file that is embedded inside GRUB in the EFI" &&
-  echo -n " partition. This finds the root and# loads the GRUB config from" &&
-  echo " there." &&
-  cp    /mnt/fs/core/tmp/grub-standalone.cfg \
-    ${root_dir}/tmp/grub-standalone.cfg &&
-
-  echo -n "Create a special file in staging named DEBIAN_CUSTOM. This file" &&
-  echo -n " will be used to help GRUB figure out which device contains our" &&
-  echo -n " live filesystem. This file name must be unique and must match" &&
-  echo " the file name in our grub.cfg config." &&
-  touch ${root_dir}/staging/DEBIAN_CUSTOM &&
-
-  echo "Prepare Boot Loader Files" &&
-  echo "Copy BIOS/legacy boot required files into our workspace." &&
-  cp /usr/lib/ISOLINUX/isolinux.bin "${root_dir}/staging/isolinux/" &&
-  cp /usr/lib/syslinux/modules/bios/* "${root_dir}/staging/isolinux/" &&
-
-  echo "Copy EFI/modern boot required files into our workspace." &&
-  cp -r /usr/lib/grub/x86_64-efi/* "${root_dir}/staging/boot/grub/x86_64-efi/"&&
-
-  echo "Generate an EFI bootable GRUB image." &&
-  grub-mkstandalone \
-    --format=x86_64-efi \
-    --output=${root_dir}/tmp/bootx64.efi \
-    --locales="" \
-    --fonts="" \
-    "boot/grub/grub.cfg=${root_dir}/tmp/grub-standalone.cfg" \
+  mksquashfs ${root_dir}/chroot ${squash_fs_file} -e boot &&
+  
+  echo "Removing packages..." &&
+  DEBIAN_FRONTEND=noninteractive apt-get purge -y \
+    debootstrap \
+    squashfs-tools \
   &&
-
-  echo "Create a FAT16 UEFI boot disk image containing the EFI bootloader." &&
-  # Note the use of the mmd and mcopy commands to copy our UEFI boot
-  # loader named bootx64.efi.
-  (
-    cd ${root_dir}/staging/EFI/boot && \
-    dd if=/dev/zero of=efiboot.img bs=1M count=20 && \
-    mkfs.vfat efiboot.img && \
-    mmd -i efiboot.img efi efi/boot && \
-    mcopy -vi efiboot.img ${root_dir}/tmp/bootx64.efi ::efi/boot/
-  ) &&
-
-  echo "Create Bootable ISO/CD" &&
-  xorriso \
-    -as mkisofs \
-    -iso-level 3 \
-    -o "${root_dir}/debian-custom.iso" \
-    -full-iso9660-filenames \
-    -volid "DEBIAN_CUSTOM" \
-    -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-    -eltorito-boot \
-        isolinux/isolinux.bin \
-        -no-emul-boot \
-        -boot-load-size 4 \
-        -boot-info-table \
-        --eltorito-catalog isolinux/isolinux.cat \
-    -eltorito-alt-boot \
-        -e /EFI/boot/efiboot.img \
-        -no-emul-boot \
-        -isohybrid-gpt-basdat \
-    -append_partition 2 0xef ${root_dir}/staging/EFI/boot/efiboot.img \
-    "${root_dir}/staging" \
-  &&
-
-# Add this to /etc/grub.d/40_custom to add the .iso to your existing GRUB.
-# Make sure you set the isofile var to the path relative to the partition.
-# Use "ls (hd0,2)" in GRUB's console to inspect the filesystem.
-
-#menuentry "Aleph ISO" --class os {
-#  insmod part_gpt
-#  set isofile="/v0.1.8.iso"
-#  loopback loop (hd0,gpt6)$isofile
-#  linux (loop)/live/vmlinuz boot=live findiso=${isofile}
-#  initrd (loop)/live/initrd
-#}
+  DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
+  DEBIAN_FRONTEND=noninteractive apt-get clean &&
 
   exit 0
 )}
@@ -579,7 +642,7 @@ function x__build()
       --name=${project_name}_x_builder \
       --volume /data:/data:rw \
       --volume ${current_dir}/aleph.sh:/data/aleph/aleph.sh:ro \
-      debian:10.6 ) &&
+      ${debian_base_image} ) &&
     docker commit ${project_name}_x_builder aleph-x:${version} &&
     docker rm ${project_name}_x_builder &&
     exit 0
@@ -968,6 +1031,7 @@ if [ $1 ]; then
   case "$1" in
     --core__builder_create) core__builder_create ; exit $? ;;
     --core__build) core__build ; exit $? ;;
+    --core__build__squashfs) core__build__squashfs ; exit $? ;;
     --core__emulate) core__emulate ; exit $? ;;
     --core__start) core__start ; exit $? ;;
     --x__build) x__build ; exit $? ;;
