@@ -13,10 +13,10 @@ debian_base_image=debian:10.10 &&
 # docker:
 container_marker=/.dockerenv &&
 # podman (requires to be ran as root):
-if command -v podman &> /dev/null
-then
-  function docker(){ podman ${@} ; } && container_marker=/run/.containerenv
-fi &&
+#if command -v podman &> /dev/null
+#then
+#  function docker(){ podman ${@} ; } && container_marker=/run/.containerenv
+#fi &&
 
 
 
@@ -68,13 +68,13 @@ function core__build()
     #  --privileged \
     # tty required for input
     #  --tty \
+#     --volume ${current_dir}/distribution_content:/distribution_content:rw,dev\
     time ( echo "cd /mnt && ./aleph.sh --core__build" |
     docker run \
       --interactive \
       --privileged \
       --name=${project_name}_core_builder \
-      --volume ${current_dir}:/mnt:ro \
-      --volume ${current_dir}/distribution_content:/distribution_content:rw,dev\
+      --volume ${current_dir}:/mnt:rw,dev \
       --entrypoint "/bin/bash" \
       ${debian_base_image} ) ;
 
@@ -246,7 +246,39 @@ function core__build__squashfs()
     http://ftp.ro.debian.org/debian/ \
   &&
 
-  (cat - <<\EOF
+  # Call the setup function/body inside the chroot
+  declare -f core__build__squashfs__setup | tail -n +3 | head -n -1 |
+    chroot ${root_dir}/chroot &&
+
+  echo -n "Copying this script to /root/aleph.sh to be called at startup ..." &&
+  cp ${project_root}/aleph.sh ${root_dir}/chroot/root/aleph.sh &&
+
+  squash_fs_file="${root_dir}/filesystem.squashfs" &&
+  echo "Removing previous Squash filesystem file: ${squash_fs_file}" &&
+  ( [ -f ${squash_fs_file} ] && rm -f ${squash_fs_file} || true ) &&
+
+  echo "Compress the chroot environment into a Squash filesystem." &&
+  mksquashfs ${root_dir}/chroot ${squash_fs_file} -e boot &&
+
+  echo "Removing packages..." &&
+  DEBIAN_FRONTEND=noninteractive apt-get purge -y \
+    debootstrap \
+    squashfs-tools \
+  &&
+  DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
+  DEBIAN_FRONTEND=noninteractive apt-get clean &&
+
+  exit 0
+)}
+
+
+
+
+# ============================================================================ #
+# Build the core squashfs - setup the system
+# ============================================================================ #
+function core__build__squashfs__setup()
+{(
     set -x && # Start debugging
 
     echo "Setting hostname ..." &&
@@ -263,7 +295,8 @@ function core__build__squashfs()
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y systemd-sysv &&
     DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
     DEBIAN_FRONTEND=noninteractive apt-get clean &&
-    exit 0 # exit chroot - back to container
+    echo "exit chroot - back to container ..." &&
+    exit 0
     (
       packages="" &&
       # See contents of package:
@@ -411,28 +444,6 @@ EOF2
 
     set +x && # Stop debugging
     exit 0
-EOF
-  ) | chroot ${root_dir}/chroot &&
-
-  echo -n "Copying this script to /root/aleph.sh to be called at startup ..." &&
-  cp ${project_root}/aleph.sh ${root_dir}/chroot/root/aleph.sh &&
-
-  squash_fs_file="${root_dir}/filesystem.squashfs" &&
-  echo "Removing previous Squash filesystem file: ${squash_fs_file}" &&
-  ( [ -f ${squash_fs_file} ] && rm -f ${squash_fs_file} || true ) &&
-  
-  echo "Compress the chroot environment into a Squash filesystem." &&
-  mksquashfs ${root_dir}/chroot ${squash_fs_file} -e boot &&
-  
-  echo "Removing packages..." &&
-  DEBIAN_FRONTEND=noninteractive apt-get purge -y \
-    debootstrap \
-    squashfs-tools \
-  &&
-  DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
-  DEBIAN_FRONTEND=noninteractive apt-get clean &&
-
-  exit 0
 )}
 
 
