@@ -3,7 +3,8 @@
 # Author: Tancredi-Paul Grozav <paul@grozav.info>
 # ============================================================================ #
 set -x && # Start debugging
-project_root="$(git rev-parse --show-toplevel)" &&
+#project_root="$(git rev-parse --show-toplevel)" &&
+project_root="$(pwd)" &&
 current_dir="$(cd $(dirname $0) ; pwd)" &&
 project_name="aleph" &&
 version="0.1.9" &&
@@ -63,7 +64,7 @@ function core__build()
     #  --privileged \
     # tty required for input
     #  --tty \
-    time ( echo "/mnt/aleph.sh --core__build" |
+    time ( echo "cd /mnt && ./aleph.sh --core__build" |
     docker run \
       --interactive \
       --privileged \
@@ -119,19 +120,19 @@ function core__build()
 
   echo "Create an ISOLINUX (Syslinux) boot menu." &&
   echo "This boot menu is used when booting in BIOS/legacy mode." &&
-  cp    /mnt/fs/core/staging/isolinux/isolinux.cfg \
+  cp    ${project_root}/fs/core/staging/isolinux/isolinux.cfg \
     ${root_dir}/staging/isolinux/isolinux.cfg &&
 
   echo "Create a second, similar, boot menu for GRUB." &&
   echo "This boot menu is used when booting in EFI/UEFI mode." &&
-  cp    /mnt/fs/core/staging/boot/grub/grub.cfg \
+  cp    ${project_root}/fs/core/staging/boot/grub/grub.cfg \
     ${root_dir}/staging/boot/grub/grub.cfg &&
 
   echo -n "Create a third boot config. This config will be an early" &&
   echo -n " configuration file that is embedded inside GRUB in the EFI" &&
   echo -n " partition. This finds the root and# loads the GRUB config from" &&
   echo " there." &&
-  cp    /mnt/fs/core/tmp/grub-standalone.cfg \
+  cp    ${project_root}/fs/core/tmp/grub-standalone.cfg \
     ${root_dir}/tmp/grub-standalone.cfg &&
 
   echo -n "Create a special file in staging named DEBIAN_CUSTOM. This file" &&
@@ -223,7 +224,7 @@ function core__build__squashfs()
   fi &&
 
   # Install stuff needed to build the core iso/OS
-  apt-get update &&
+  DEBIAN_FRONTEND=noninteractive apt-get update &&
   DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
     debootstrap \
     squashfs-tools \
@@ -252,13 +253,13 @@ function core__build__squashfs()
 
     echo "Installing kernel and packages ..." &&
 #    apt-cache search linux-image &&
-    apt-get update &&
+    DEBIAN_FRONTEND=noninteractive apt-get update &&
     export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/distribution_content/chroot_v1/usr/lib/systemd" &&
     # for PXE boot, i don't need to install the kernel: linux-image-amd64 it probably uses init-ram-disk, not needed: live-boot, but systemd-sysv is required as it is the init system
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y systemd-sysv &&
     DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
     DEBIAN_FRONTEND=noninteractive apt-get clean &&
-    exit 0
+    exit 0 # exit chroot - back to container
     (
       packages="" &&
       # See contents of package:
@@ -410,7 +411,7 @@ EOF
   ) | chroot ${root_dir}/chroot &&
 
   echo -n "Copying this script to /root/aleph.sh to be called at startup ..." &&
-  cp /mnt/aleph.sh ${root_dir}/chroot/root/aleph.sh &&
+  cp ${project_root}/aleph.sh ${root_dir}/chroot/root/aleph.sh &&
 
   squash_fs_file="${root_dir}/filesystem.squashfs" &&
   echo "Removing previous Squash filesystem file: ${squash_fs_file}" &&
