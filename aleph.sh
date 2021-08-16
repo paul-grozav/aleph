@@ -28,6 +28,13 @@ then
   function docker(){ podman ${@} ; } && container_marker=/run/.containerenv
 fi &&
 
+# Distribution directory
+distro_dir="$(pwd)" &&
+if [ "${distro_dir}" == "/" ] ; then
+  distro_dir="/distribution_content"
+else
+  distro_dir="${distro_dir}/distribution_content"
+fi &&
 
 
 
@@ -97,12 +104,6 @@ function core__build()
   } &&
 
   echo "Building Aleph Core ..." &&
-  distro_dir="$(pwd)" &&
-  if [ "${distro_dir}" == "/" ] ; then
-    distro_dir="/distribution_content"
-  else
-    distro_dir="${distro_dir}/distribution_content"
-  fi &&
 
   if [ ! -d ${distro_dir} ] ; then
     mkdir -p ${distro_dir}
@@ -110,8 +111,9 @@ function core__build()
 
   if [ "$(ls -A ${distro_dir})" ]; then
     echo -n "distro_dir=${distro_dir} is not empty." &&
-    echo " Please clear it before rebuilding"
-    rm -rf ${distro_dir}/* && echo "I cleared it"
+    echo " Please clear it before rebuilding" &&
+    rm -rf ${distro_dir}/* &&
+    echo "I cleared it"
 #    exit 1
   fi
 
@@ -235,12 +237,6 @@ function core__build__squashfs()
   } &&
 
   echo "Building Aleph Core - squashfs ..." &&
-  distro_dir="$(pwd)" &&
-  if [ "${distro_dir}" == "/" ] ; then
-    distro_dir="/distribution_content"
-  else
-    distro_dir="${distro_dir}/distribution_content"
-  fi &&
 
   # Install stuff needed to build the core iso/OS
   DEBIAN_FRONTEND=noninteractive apt-get update &&
@@ -287,9 +283,7 @@ function core__build__squashfs()
   rm -rf ${distro_dir}/chroot &&
 
   echo "Publishing squash file system ..." &&
-  mkdir $(pwd)/public &&
   mv ${distro_dir} $(pwd)/public/ &&
-  echo "Aleph GNU/Linux distribution" > $(pwd)/public/index.html &&
 
   echo "Removing packages..." &&
   DEBIAN_FRONTEND=noninteractive apt-get purge -y \
