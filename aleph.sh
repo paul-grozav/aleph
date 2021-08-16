@@ -251,12 +251,12 @@ function core__build()
 # ============================================================================ #
 function core__build__squashfs()
 {(
-  run_in_container || (
-    echo "Nothing to do outside of container"
-  ) && exit 0 &&
+  run_in_container || {
+#    echo "Nothing to do outside of container" &&
+    exit 0
+  } &&
 
   echo "Building Aleph Core - squashfs ..." &&
-  exit 0
   root_dir="$(pwd)" &&
   if [ "${root_dir}" == "/" ] ; then
     root_dir="/distribution_content"
