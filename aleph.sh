@@ -97,20 +97,21 @@ function core__build()
   } &&
 
   echo "Building Aleph Core ..." &&
-  root_dir="$(pwd)" &&
-  if [ "${root_dir}" == "/" ] ; then
-    root_dir="/distribution_content"
+  distro_dir="$(pwd)" &&
+  if [ "${distro_dir}" == "/" ] ; then
+    distro_dir="/distribution_content"
   else
-    root_dir="${root_dir}/distribution_content"
+    distro_dir="${distro_dir}/distribution_content"
   fi &&
 
-  if [ ! -d ${root_dir} ] ; then
-    mkdir -p ${root_dir}
+  if [ ! -d ${distro_dir} ] ; then
+    mkdir -p ${distro_dir}
   fi &&
 
-  if [ "$(ls -A ${root_dir})" ]; then
-    echo "root_dir=${root_dir} is not empty. Please clear it before rebuilding"
-    rm -rf ${root_dir}/* && echo "I cleared it"
+  if [ "$(ls -A ${distro_dir})" ]; then
+    echo -n "distro_dir=${distro_dir} is not empty." &&
+    echo " Please clear it before rebuilding"
+    rm -rf ${distro_dir}/* && echo "I cleared it"
 #    exit 1
   fi
 
@@ -120,72 +121,73 @@ function core__build()
   echo -n "Create directories that will contain files for our live" &&
   echo " environment files and scratch files." &&
   mkdir -p \
-    ${root_dir}/{staging/{EFI/boot,boot/grub/x86_64-efi,isolinux,live},tmp} &&
+    ${distro_dir}/{staging/{EFI/boot,boot/grub/x86_64-efi,isolinux,live},tmp} &&
 
   echo "Adding the Squash filesystem." &&
-  mv ${root_dir}/filesystem.squashfs ${root_dir}/staging/live/ &&
+  mv ${distro_dir}/filesystem.squashfs ${distro_dir}/staging/live/ &&
 
   echo -n "Copy the kernel and initramfs from inside the chroot to the live" &&
   echo " directory." &&
-  cp ${root_dir}/chroot/boot/vmlinuz-* ${root_dir}/staging/live/vmlinuz &&
-  cp ${root_dir}/chroot/boot/initrd.img-* ${root_dir}/staging/live/initrd &&
+  cp ${distro_dir}/chroot/boot/vmlinuz-* ${distro_dir}/staging/live/vmlinuz &&
+  cp ${distro_dir}/chroot/boot/initrd.img-* ${distro_dir}/staging/live/initrd &&
 
   echo "Create an ISOLINUX (Syslinux) boot menu." &&
   echo "This boot menu is used when booting in BIOS/legacy mode." &&
   cp    ${project_root}/fs/core/staging/isolinux/isolinux.cfg \
-    ${root_dir}/staging/isolinux/isolinux.cfg &&
+    ${distro_dir}/staging/isolinux/isolinux.cfg &&
 
   echo "Create a second, similar, boot menu for GRUB." &&
   echo "This boot menu is used when booting in EFI/UEFI mode." &&
   cp    ${project_root}/fs/core/staging/boot/grub/grub.cfg \
-    ${root_dir}/staging/boot/grub/grub.cfg &&
+    ${distro_dir}/staging/boot/grub/grub.cfg &&
 
   echo -n "Create a third boot config. This config will be an early" &&
   echo -n " configuration file that is embedded inside GRUB in the EFI" &&
   echo -n " partition. This finds the root and# loads the GRUB config from" &&
   echo " there." &&
   cp    ${project_root}/fs/core/tmp/grub-standalone.cfg \
-    ${root_dir}/tmp/grub-standalone.cfg &&
+    ${distro_dir}/tmp/grub-standalone.cfg &&
 
   echo -n "Create a special file in staging named DEBIAN_CUSTOM. This file" &&
   echo -n " will be used to help GRUB figure out which device contains our" &&
   echo -n " live filesystem. This file name must be unique and must match" &&
   echo " the file name in our grub.cfg config." &&
-  touch ${root_dir}/staging/DEBIAN_CUSTOM &&
+  touch ${distro_dir}/staging/DEBIAN_CUSTOM &&
 
   echo "Prepare Boot Loader Files" &&
   echo "Copy BIOS/legacy boot required files into our workspace." &&
-  cp /usr/lib/ISOLINUX/isolinux.bin "${root_dir}/staging/isolinux/" &&
-  cp /usr/lib/syslinux/modules/bios/* "${root_dir}/staging/isolinux/" &&
+  cp /usr/lib/ISOLINUX/isolinux.bin "${distro_dir}/staging/isolinux/" &&
+  cp /usr/lib/syslinux/modules/bios/* "${distro_dir}/staging/isolinux/" &&
 
   echo "Copy EFI/modern boot required files into our workspace." &&
-  cp -r /usr/lib/grub/x86_64-efi/* "${root_dir}/staging/boot/grub/x86_64-efi/"&&
+  cp -r /usr/lib/grub/x86_64-efi/* \
+    "${distro_dir}/staging/boot/grub/x86_64-efi/"&&
 
   echo "Generate an EFI bootable GRUB image." &&
   grub-mkstandalone \
     --format=x86_64-efi \
-    --output=${root_dir}/tmp/bootx64.efi \
+    --output=${distro_dir}/tmp/bootx64.efi \
     --locales="" \
     --fonts="" \
-    "boot/grub/grub.cfg=${root_dir}/tmp/grub-standalone.cfg" \
+    "boot/grub/grub.cfg=${distro_dir}/tmp/grub-standalone.cfg" \
   &&
 
   echo "Create a FAT16 UEFI boot disk image containing the EFI bootloader." &&
   # Note the use of the mmd and mcopy commands to copy our UEFI boot
   # loader named bootx64.efi.
   (
-    cd ${root_dir}/staging/EFI/boot && \
+    cd ${distro_dir}/staging/EFI/boot && \
     dd if=/dev/zero of=efiboot.img bs=1M count=20 && \
     mkfs.vfat efiboot.img && \
     mmd -i efiboot.img efi efi/boot && \
-    mcopy -vi efiboot.img ${root_dir}/tmp/bootx64.efi ::efi/boot/
+    mcopy -vi efiboot.img ${distro_dir}/tmp/bootx64.efi ::efi/boot/
   ) &&
 
   echo "Create Bootable ISO/CD" &&
   xorriso \
     -as mkisofs \
     -iso-level 3 \
-    -o "${root_dir}/debian-custom.iso" \
+    -o "${distro_dir}/debian-custom.iso" \
     -full-iso9660-filenames \
     -volid "DEBIAN_CUSTOM" \
     -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
@@ -199,8 +201,8 @@ function core__build()
         -e /EFI/boot/efiboot.img \
         -no-emul-boot \
         -isohybrid-gpt-basdat \
-    -append_partition 2 0xef ${root_dir}/staging/EFI/boot/efiboot.img \
-    "${root_dir}/staging" \
+    -append_partition 2 0xef ${distro_dir}/staging/EFI/boot/efiboot.img \
+    "${distro_dir}/staging" \
   &&
 
 # Add this to /etc/grub.d/40_custom to add the .iso to your existing GRUB.
@@ -233,11 +235,11 @@ function core__build__squashfs()
   } &&
 
   echo "Building Aleph Core - squashfs ..." &&
-  root_dir="$(pwd)" &&
-  if [ "${root_dir}" == "/" ] ; then
-    root_dir="/distribution_content"
+  distro_dir="$(pwd)" &&
+  if [ "${distro_dir}" == "/" ] ; then
+    distro_dir="/distribution_content"
   else
-    root_dir="${root_dir}/distribution_content"
+    distro_dir="${distro_dir}/distribution_content"
   fi &&
 
   # Install stuff needed to build the core iso/OS
@@ -248,13 +250,13 @@ function core__build__squashfs()
   &&
 
   # Clean chroot dir
-  if [ -d ${root_dir}/chroot ]
+  if [ -d ${distro_dir}/chroot ]
   then
-    echo "Clearing ${root_dir}/chroot/* ..." &&
-    rm -rf ${root_dir}/chroot/*
+    echo "Clearing ${distro_dir}/chroot/* ..." &&
+    rm -rf ${distro_dir}/chroot/*
   else
-    echo "Creating directory ${root_dir}/chroot ..." &&
-    mkdir -p ${root_dir}/chroot
+    echo "Creating directory ${distro_dir}/chroot ..." &&
+    mkdir -p ${distro_dir}/chroot
   fi &&
 
   echo "Creating minimal debian system (debootstrap)  ..." &&
@@ -263,30 +265,30 @@ function core__build__squashfs()
     --components=main,non-free \
     --variant=minbase \
     stable \
-    ${root_dir}/chroot \
+    ${distro_dir}/chroot \
     http://ftp.ro.debian.org/debian/ \
   &&
 
   # Call the setup function/body inside the chroot
   declare -f core__build__squashfs__setup | tail -n +3 | head -n -1 |
-    chroot ${root_dir}/chroot &&
+    chroot ${distro_dir}/chroot &&
 
   echo -n "Copying this script to /root/aleph.sh to be called at startup ..." &&
-  cp ${project_root}/aleph.sh ${root_dir}/chroot/root/aleph.sh &&
+  cp ${project_root}/aleph.sh ${distro_dir}/chroot/root/aleph.sh &&
 
-  squash_fs_file="${root_dir}/filesystem.squashfs" &&
+  squash_fs_file="${distro_dir}/filesystem.squashfs" &&
   echo "Removing previous Squash filesystem file: ${squash_fs_file}" &&
   ( [ -f ${squash_fs_file} ] && rm -f ${squash_fs_file} || true ) &&
 
   echo "Compress the chroot environment into a Squash filesystem." &&
-  mksquashfs ${root_dir}/chroot ${squash_fs_file} -e boot &&
+  mksquashfs ${distro_dir}/chroot ${squash_fs_file} -e boot &&
 
-  echo "Removing chroot dir ${root_dir}/chroot ..." &&
-  rm -rf ${root_dir}/chroot &&
+  echo "Removing chroot dir ${distro_dir}/chroot ..." &&
+  rm -rf ${distro_dir}/chroot &&
 
   echo "Publishing squash file system ..." &&
   mkdir $(pwd)/public &&
-  mv ${root_dir} $(pwd)/public/ &&
+  mv ${distro_dir} $(pwd)/public/ &&
   echo "Aleph GNU/Linux distribution" > $(pwd)/public/index.html &&
 
   echo "Removing packages..." &&
@@ -317,7 +319,7 @@ function core__build__squashfs__setup()
     echo "Setting root's password to aleph ..." &&
     echo root:aleph | chpasswd &&
 
-    echo "Installing kernel and packages ..." &&
+    echo "Installing extra packages ..." &&
 #    apt-cache search linux-image &&
     DEBIAN_FRONTEND=noninteractive apt-get update &&
     # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/distribution_content/chroot/usr/lib/systemd" &&
