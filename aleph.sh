@@ -1045,7 +1045,7 @@ function x__xfce__start()
 # ============================================================================ #
 function print_help()
 {
-  echo "--core__build            Build the core iso inside the container." &&
+  echo "--core__build            Build the core .iso inside the container." &&
   echo "--core__build__squashfs  Build the core squashfs." &&
   echo "--core__emulate          Boot the distribution iso inside qemu." &&
   echo "--core__start            Start programs once the distribution booted."&&

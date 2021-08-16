@@ -1,6 +1,6 @@
 image: debian:10.10
 
-build_squashfs:
+build_pxe_squashfs:
   stage: build
   tags:
     - docker
@@ -9,7 +9,7 @@ build_squashfs:
     - ./aleph.sh --core__build
   artifacts:
     paths:
-      - public/distribution_content/filesystem.squashfs
+      - distribution_content/filesystem.squashfs
     expire_in: 1 hour
       # depending on your build setup it's most likely a good idea to cache outputs to reduce the build time
       # cache:
@@ -18,9 +18,9 @@ build_squashfs:
 
 pages:
   stage: deploy
-  needs: ["build_squashfs"]
+  needs: ["build_pxe_squashfs"]
   script:
-    - echo "Nothing to do..."
+    - mv distribution_content public/distribution_content
   artifacts:
     paths:
       - public/
