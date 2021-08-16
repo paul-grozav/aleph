@@ -4,8 +4,7 @@
 # ============================================================================ #
 set -x && # Start debugging
 #project_root="$(git rev-parse --show-toplevel)" &&
-project_root="$(pwd)" &&
-current_dir="$(cd $(dirname $0) ; pwd)" &&
+project_root="$(cd $(dirname $0) ; pwd)" &&
 project_name="aleph" &&
 version="0.1.9" &&
 debian_base_image=debian:10.10 &&
@@ -47,21 +46,21 @@ function run_in_container()
   if [ ! -f ${container_marker} ]; then
     docker stop -t0 ${project_name}_core_builder ;
     docker rm ${project_name}_core_builder ;
-    if [ ! -d ${current_dir}/distribution_content ]
-    then
-      mkdir ${current_dir}/distribution_content
-    fi &&
+#    if [ ! -d ${project_root}/distribution_content ]
+#    then
+#      mkdir ${project_root}/distribution_content
+#    fi &&
     # Privileged is required to start docker in chroot inside the container
     #  --privileged \
     # tty required for input
     #  --tty \
-#     --volume ${current_dir}/distribution_content:/distribution_content:rw,dev\
+#    --volume ${project_root}/distribution_content:/distribution_content:rw,dev\
     time ( echo "cd /mnt && ./aleph.sh --${FUNCNAME[1]}" |
     docker run \
       --interactive \
       --privileged \
       --name=${project_name}_core_builder \
-      --volume ${current_dir}:/mnt:rw,dev \
+      --volume ${project_root}:/mnt:rw,dev \
       --env is_podman_available="${is_podman_available}" \
       --entrypoint "/bin/bash" \
       ${debian_base_image} ) ;
@@ -87,38 +86,15 @@ function run_in_container()
 # ============================================================================ #
 function core__build()
 {(
-  if [ ! -f ${container_marker} ]; then
-    docker stop -t0 ${project_name}_core_builder ;
-    docker rm ${project_name}_core_builder ;
-    if [ ! -d ${current_dir}/distribution_content ]
-    then
-      mkdir ${current_dir}/distribution_content
-    fi &&
-    # Privileged is required to start docker in chroot inside the container
-    #  --privileged \
-    # tty required for input
-    #  --tty \
-#     --volume ${current_dir}/distribution_content:/distribution_content:rw,dev\
-    time ( echo "cd /mnt && ./aleph.sh --core__build" |
-    docker run \
-      --interactive \
-      --privileged \
-      --name=${project_name}_core_builder \
-      --volume ${current_dir}:/mnt:rw,dev \
-      --env is_podman_available="${is_podman_available}" \
-      --entrypoint "/bin/bash" \
-      ${debian_base_image} ) ;
-
-    iso_path="${current_dir}/distribution_content/debian-custom.iso" &&
+  run_in_container || {
+    # After running it in container, do outside:
+    iso_path="${project_root}/distribution_content/debian-custom.iso" &&
     if [ -f ${iso_path} ]; then
       echo "Copying generated .iso as version ${version} ..." &&
-      cp ${iso_path} ${current_dir}/v${version}.iso
+      cp ${iso_path} ${project_root}/v${version}.iso
     fi
     exit 0
-  fi
-  # Fix dns issue in podman
-  gw_ip="$(ip route | grep -w default | awk '{print $3}')" &&
-  echo "nameserver ${gw_ip}" > /etc/resolv.conf &&
+  } &&
 
   echo "Building Aleph Core ..." &&
   root_dir="$(pwd)" &&
@@ -311,6 +287,7 @@ function core__build__squashfs()
   echo "Publishing squash file system ..." &&
   mkdir $(pwd)/public &&
   mv ${root_dir} $(pwd)/public/ &&
+  echo "Aleph GNU/Linux distribution" > $(pwd)/public/index.html &&
 
   echo "Removing packages..." &&
   DEBIAN_FRONTEND=noninteractive apt-get purge -y \
@@ -518,8 +495,8 @@ function core__emulate()
 #    -device e1000,netdev=net0 \
   (qemu-system-x86_64 \
     -m 1G \
-    -cdrom ${current_dir}/v${version}.iso \
-    -hda ${current_dir}/persistent.hdd \
+    -cdrom ${project_root}/v${version}.iso \
+    -hda ${project_root}/persistent.hdd \
     -boot d \
     -device e1000,netdev=net0 \
     -netdev user,id=net0,hostfwd=tcp::1122-:22 \
@@ -710,7 +687,7 @@ function x__build()
     | docker run -i \
       --name=${project_name}_x_builder \
       --volume /data:/data:rw \
-      --volume ${current_dir}/aleph.sh:/data/aleph/aleph.sh:ro \
+      --volume ${project_root}/aleph.sh:/data/aleph/aleph.sh:ro \
       ${debian_base_image} ) &&
     docker commit ${project_name}_x_builder aleph-x:${version} &&
     docker rm ${project_name}_x_builder &&
@@ -869,7 +846,7 @@ function x__start()
       --env hypervisor_group_name="${hypervisor_group_name}" \
       --volume /run/udev:/run/udev:rw \
       --volume /data:/data:rw \
-      --volume ${current_dir}:/aleph:ro \
+      --volume ${project_root}:/aleph:ro \
       ${docker_x_parameters} \
       aleph-x:${version} ;
 
