@@ -9,7 +9,7 @@ build:
     - ./aleph.sh --core__build
   artifacts:
     paths:
-      - distribution_content/filesystem.squashfs
+      - public/distribution_content/filesystem.squashfs
     expire_in: 1 hour
       # depending on your build setup it's most likely a good idea to cache outputs to reduce the build time
       # cache:

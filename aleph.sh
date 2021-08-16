@@ -39,6 +39,9 @@ fi &&
 # Utils
 # If the caller function is not running in container, then create the container
 # and call it again
+# Returns 0 if running in the container, the caller can continue/run and 1 if
+# and only if the function is running outside of the container, and the caller
+# function should do something specific or exit.
 function run_in_container()
 {(
   if [ ! -f ${container_marker} ]; then
@@ -68,6 +71,7 @@ function run_in_container()
   # Fix dns issue in podman
   gw_ip="$(ip route | grep -w default | awk '{print $3}')" &&
   echo "nameserver ${gw_ip}" > /etc/resolv.conf &&
+  # Continue running the caller function
   exit 0
 )}
 # ============================================================================ #
@@ -241,20 +245,18 @@ function core__build()
 
 
 
-
 # ============================================================================ #
 # Build the core squashfs
+# https://gitlab.com/tancredi-paul-grozav/aleph/-/jobs/artifacts/main/raw/distribution_content/filesystem.squashfs?job=build
 # ============================================================================ #
 function core__build__squashfs()
 {(
-  run_in_container ;
-  exit_code="${?}" &&
-  if [ "${exit_code}" == "1" ]
-  then
-    exit 0
-  fi &&
+  run_in_container || (
+    echo "Nothing to do outside of container"
+  ) && exit 0 &&
 
   echo "Building Aleph Core - squashfs ..." &&
+  exit 0
   root_dir="$(pwd)" &&
   if [ "${root_dir}" == "/" ] ; then
     root_dir="/distribution_content"
@@ -305,6 +307,10 @@ function core__build__squashfs()
 
   echo "Removing chroot dir ${root_dir}/chroot ..." &&
   rm -rf ${root_dir}/chroot &&
+
+  echo "Publishing squash file system ..." &&
+  mkdir $(pwd)/public &&
+  mv ${root_dir} $(pwd)/public/ &&
 
   echo "Removing packages..." &&
   DEBIAN_FRONTEND=noninteractive apt-get purge -y \
