@@ -13,6 +13,7 @@ core__build__pxe_kernel:
     - ./aleph.sh --core__build__pxe_kernel
   artifacts:
     paths:
+      - distribution_content/aleph.krnl
       - distribution_content/aleph.ird
     expire_in: 1 hour
 # ============================================================================ #

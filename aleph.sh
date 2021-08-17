@@ -132,7 +132,11 @@ function core__build__pxe_kernel()
   echo "Generating initramfs/kernel file ..." &&
   update-initramfs -u -k all &&
 
-  echo "Renaming initramfs/kernel file ..." &&
+  echo "Renaming kernel file ..." &&
+#  cp /boot/vmlinuz-${kernel_version} ${distro_dir}/aleph.ird &&
+  cp /boot/vmlinuz-* ${distro_dir}/aleph.krnl &&
+
+  echo "Renaming initram fs/disk file ..." &&
 #  cp /boot/initrd.img-${kernel_version} ${distro_dir}/aleph.ird &&
   cp /boot/initrd.img-* ${distro_dir}/aleph.ird &&
 
