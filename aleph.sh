@@ -7,7 +7,8 @@ set -x && # Start debugging
 project_root="$(cd $(dirname $0) ; pwd)" &&
 project_name="aleph" &&
 version="0.1.9" &&
-debian_base_image=debian:10.10 &&
+debian_base_image="$(cat ${project_root}/.gitlab-ci.yml | grep ^image |
+  head -n 1 | awk '{print $2}')" &&
 
 # docker:
 container_marker=/.dockerenv &&
@@ -69,6 +70,7 @@ function run_in_container()
     docker run \
       --interactive \
       --privileged \
+      --rm \
       --name=${project_name}_core_builder \
       --volume ${project_root}:/mnt:rw,dev \
       --env is_podman_available="${is_podman_available}" \
@@ -150,7 +152,7 @@ function core__build__pxe_kernel()
 
 # ============================================================================ #
 # Build the core PXE squashfs
-# https://gitlab.com/tancredi-paul-grozav/aleph/-/jobs/artifacts/main/raw/distribution_content/filesystem.squashfs?job=build
+# https://gitlab.com/tancredi-paul-grozav/aleph/-/jobs/artifacts/main/raw/distribution_content/aleph.sfs?job=build
 # ============================================================================ #
 function core__build__pxe_squashfs()
 {(
@@ -168,7 +170,7 @@ function core__build__pxe_squashfs()
     squashfs-tools \
   &&
 
-  # Clean chroot dir
+  echo "Cleaning chroot directory ..." &&
   if [ -d ${distro_dir}/chroot ]
   then
     echo "Clearing ${distro_dir}/chroot/* ..." &&
@@ -196,7 +198,7 @@ function core__build__pxe_squashfs()
   echo -n "Copying this script to /root/aleph.sh to be called at startup ..." &&
   cp ${project_root}/aleph.sh ${distro_dir}/chroot/root/aleph.sh &&
 
-  squash_fs_file="${distro_dir}/filesystem.squashfs" &&
+  squash_fs_file="${distro_dir}/aleph.sfs" &&
   echo "Removing previous Squash filesystem file: ${squash_fs_file}" &&
   ( [ -f ${squash_fs_file} ] && rm -f ${squash_fs_file} || true ) &&
 
@@ -449,22 +451,46 @@ function core__build__iso()
 {(
   run_in_container || {
     # After running it in container, do outside:
-    iso_path="${project_root}/distribution_content/debian-custom.iso" &&
+    iso_path="${project_root}/distribution_content/aleph.iso" &&
     if [ -f ${iso_path} ]; then
-      echo "Copying generated .iso as version ${version} ..." &&
-      cp ${iso_path} ${project_root}/v${version}.iso
+      echo "Copying generated .iso as version ${version} ..."
+      echo cp ${iso_path} ${project_root}/v${version}.iso
     fi
     exit 0
   } &&
 
   echo "Checking requirements ..." &&
-  if [ ! -f ${distro_dir}/filesystem.squashfs ]; then
-    echo "Missing ${distro_dir}/filesystem.squashfs . build it using job" &&
+  if [ ! -f ${distro_dir}/aleph.sfs ]; then
+    echo "Missing ${distro_dir}/aleph.sfs . build it using job" &&
     exit 1
   fi
 
   echo "Building Aleph Core .iso ..." &&
-  exit 0
+
+  echo "Installing packages..." &&
+  DEBIAN_FRONTEND=noninteractive apt-get update &&
+  DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    linux-image-amd64 \
+    live-boot \
+    isolinux \
+    syslinux-common \
+    syslinux-efi \
+    grub-pc-bin \
+    grub-efi-amd64-bin \
+    mtools \
+    dosfstools \
+    xorriso \
+  &&
+
+  echo "Cleaning staging directory ..." &&
+  if [ -d ${distro_dir}/staging ]
+  then
+    echo "Clearing ${distro_dir}/staging/* ..." &&
+    rm -rf ${distro_dir}/staging/*
+  else
+    echo "Creating directory ${distro_dir}/staging ..." &&
+    mkdir -p ${distro_dir}/staging
+  fi &&
 
   echo -n "Create directories that will contain files for our live" &&
   echo " environment files and scratch files." &&
@@ -472,28 +498,28 @@ function core__build__iso()
     ${distro_dir}/{staging/{EFI/boot,boot/grub/x86_64-efi,isolinux,live},tmp} &&
 
   echo "Adding the Squash filesystem." &&
-  mv ${distro_dir}/filesystem.squashfs ${distro_dir}/staging/live/ &&
+  cp ${distro_dir}/aleph.sfs ${distro_dir}/staging/live/filesystem.squashfs &&
 
   echo -n "Copy the kernel and initramfs from inside the chroot to the live" &&
   echo " directory." &&
-  cp ${distro_dir}/chroot/boot/vmlinuz-* ${distro_dir}/staging/live/vmlinuz &&
-  cp ${distro_dir}/chroot/boot/initrd.img-* ${distro_dir}/staging/live/initrd &&
+  cp /boot/vmlinuz-* ${distro_dir}/staging/live/vmlinuz &&
+  cp /boot/initrd.img-* ${distro_dir}/staging/live/initrd &&
 
   echo "Create an ISOLINUX (Syslinux) boot menu." &&
   echo "This boot menu is used when booting in BIOS/legacy mode." &&
-  cp    ${project_root}/fs/core/staging/isolinux/isolinux.cfg \
+  cp ${project_root}/fs/core/staging/isolinux/isolinux.cfg \
     ${distro_dir}/staging/isolinux/isolinux.cfg &&
 
   echo "Create a second, similar, boot menu for GRUB." &&
   echo "This boot menu is used when booting in EFI/UEFI mode." &&
-  cp    ${project_root}/fs/core/staging/boot/grub/grub.cfg \
+  cp ${project_root}/fs/core/staging/boot/grub/grub.cfg \
     ${distro_dir}/staging/boot/grub/grub.cfg &&
 
   echo -n "Create a third boot config. This config will be an early" &&
   echo -n " configuration file that is embedded inside GRUB in the EFI" &&
   echo -n " partition. This finds the root and# loads the GRUB config from" &&
   echo " there." &&
-  cp    ${project_root}/fs/core/tmp/grub-standalone.cfg \
+  cp ${project_root}/fs/core/tmp/grub-standalone.cfg \
     ${distro_dir}/tmp/grub-standalone.cfg &&
 
   echo -n "Create a special file in staging named DEBIAN_CUSTOM. This file" &&
@@ -504,12 +530,12 @@ function core__build__iso()
 
   echo "Prepare Boot Loader Files" &&
   echo "Copy BIOS/legacy boot required files into our workspace." &&
-  cp /usr/lib/ISOLINUX/isolinux.bin "${distro_dir}/staging/isolinux/" &&
-  cp /usr/lib/syslinux/modules/bios/* "${distro_dir}/staging/isolinux/" &&
+  cp /usr/lib/ISOLINUX/isolinux.bin ${distro_dir}/staging/isolinux/ &&
+  cp /usr/lib/syslinux/modules/bios/* ${distro_dir}/staging/isolinux/ &&
 
   echo "Copy EFI/modern boot required files into our workspace." &&
   cp -r /usr/lib/grub/x86_64-efi/* \
-    "${distro_dir}/staging/boot/grub/x86_64-efi/"&&
+    ${distro_dir}/staging/boot/grub/x86_64-efi/ &&
 
   echo "Generate an EFI bootable GRUB image." &&
   grub-mkstandalone \
@@ -517,27 +543,28 @@ function core__build__iso()
     --output=${distro_dir}/tmp/bootx64.efi \
     --locales="" \
     --fonts="" \
-    "boot/grub/grub.cfg=${distro_dir}/tmp/grub-standalone.cfg" \
+    boot/grub/grub.cfg=${distro_dir}/tmp/grub-standalone.cfg \
   &&
 
   echo "Create a FAT16 UEFI boot disk image containing the EFI bootloader." &&
   # Note the use of the mmd and mcopy commands to copy our UEFI boot
   # loader named bootx64.efi.
-  (
-    cd ${distro_dir}/staging/EFI/boot && \
-    dd if=/dev/zero of=efiboot.img bs=1M count=20 && \
-    mkfs.vfat efiboot.img && \
-    mmd -i efiboot.img efi efi/boot && \
-    mcopy -vi efiboot.img ${distro_dir}/tmp/bootx64.efi ::efi/boot/
-  ) &&
+  efi_file=${distro_dir}/staging/EFI/boot/efiboot.img &&
+  dd if=/dev/zero of=${efi_file} bs=1M count=20 &&
+  mkfs.vfat ${efi_file} &&
+  mmd -i ${efi_file} efi efi/boot &&
+  mcopy -vi ${efi_file} ${distro_dir}/tmp/bootx64.efi ::efi/boot/ &&
+
+  echo "Removing efi tmp folder..." &&
+  rm -rf ${distro_dir}/tmp &&
 
   echo "Create Bootable ISO/CD" &&
   xorriso \
     -as mkisofs \
     -iso-level 3 \
-    -o "${distro_dir}/debian-custom.iso" \
+    -o ${distro_dir}/aleph.iso \
     -full-iso9660-filenames \
-    -volid "DEBIAN_CUSTOM" \
+    -volid DEBIAN_CUSTOM \
     -isohybrid-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
     -eltorito-boot \
         isolinux/isolinux.bin \
@@ -550,7 +577,7 @@ function core__build__iso()
         -no-emul-boot \
         -isohybrid-gpt-basdat \
     -append_partition 2 0xef ${distro_dir}/staging/EFI/boot/efiboot.img \
-    "${distro_dir}/staging" \
+    ${distro_dir}/staging \
   &&
 
 # Add this to /etc/grub.d/40_custom to add the .iso to your existing GRUB.
@@ -564,6 +591,25 @@ function core__build__iso()
 #  linux (loop)/live/vmlinuz boot=live findiso=${isofile}
 #  initrd (loop)/live/initrd
 #}
+
+  echo "Removing staging folder..." &&
+  rm -rf ${distro_dir}/staging &&
+
+  echo "Removing packages..." &&
+  DEBIAN_FRONTEND=noninteractive apt-get purge -y \
+    linux-image-amd64 \
+    live-boot \
+    isolinux \
+    syslinux-common \
+    syslinux-efi \
+    grub-pc-bin \
+    grub-efi-amd64-bin \
+    mtools \
+    dosfstools \
+    xorriso \
+  &&
+  DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
+  DEBIAN_FRONTEND=noninteractive apt-get clean &&
 
   exit 0
 )}

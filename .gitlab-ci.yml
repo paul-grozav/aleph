@@ -1,21 +1,9 @@
+# ============================================================================ #
+# Author: Tancredi-Paul Grozav <paul@grozav.info>
+# ============================================================================ #
+# image version should match debian_base_image from aleph.sh
 image: debian:10.10
-
-core__build__pxe_squashfs:
-  stage: build
-  tags:
-    - docker
-    - linux
-  script:
-    - ./aleph.sh --core__build__pxe_squashfs
-  artifacts:
-    paths:
-      - distribution_content/filesystem.squashfs
-    expire_in: 1 hour
-      # depending on your build setup it's most likely a good idea to cache outputs to reduce the build time
-      # cache:
-      #   paths:
-      #     - "*.o"
-
+# ============================================================================ #
 core__build__pxe_kernel:
   stage: build
   tags:
@@ -27,29 +15,49 @@ core__build__pxe_kernel:
     paths:
       - distribution_content/aleph.ird
     expire_in: 1 hour
-
-#core__build__iso:
-#  stage: build
-#  tags:
-#    - docker
-#    - linux
-#  script:
-#    - ./aleph.sh --core__build__iso
-#  artifacts:
-#    paths:
-#      - distribution_content/filesystem.squashfs
-#    expire_in: 1 hour
-      # depending on your build setup it's most likely a good idea to cache outputs to reduce the build time
+# ============================================================================ #
+core__build__pxe_squashfs:
+  stage: build
+  tags:
+    - docker
+    - linux
+  script:
+    - ./aleph.sh --core__build__pxe_squashfs
+  artifacts:
+    paths:
+      - distribution_content/aleph.sfs
+    expire_in: 1 hour
+      # depending on your build setup it's most likely a good idea to cache
+      #   outputs to reduce the build time:
       # cache:
       #   paths:
       #     - "*.o"
-
+# ============================================================================ #
+core__build__iso:
+  stage: build
+  tags:
+    - docker
+    - linux
+  needs:
+    - core__build__pxe_squashfs
+  script:
+    - ./aleph.sh --core__build__iso
+  artifacts:
+    paths:
+      - distribution_content/aleph.iso
+    expire_in: 1 hour
+# ============================================================================ #
 pages:
   stage: deploy
-  needs: ["core__build__pxe_squashfs", "core__build__pxe_kernel"]
+  needs:
+    - core__build__pxe_kernel
+    - core__build__pxe_squashfs
+    - core__build__iso
   script:
     - mv distribution_content public/distribution_content
   artifacts:
     paths:
       - public/
     expire_in: 1 hour
+# ============================================================================ #
+
