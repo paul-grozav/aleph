@@ -1,0 +1,91 @@
+#!/bin/bash
+# ============================================================================ #
+# Author: Tancredi-Paul Grozav <paul@grozav.info>
+# ============================================================================ #
+# Thanks to: https://habr.com/en/post/513568/
+# ============================================================================ #
+mountroot()
+{
+  maxTryCount=5
+  squashfsFile="/tmp/rootfs.squashfs"
+  squashfsMountPoint="/mnt/ro"
+  tmpfsMountPoint="/mnt/rw"
+  overlayfsUppderDir="$tmpfsMountPoint/upper"
+  overlayfsWorkDir="$tmpfsMountPoint/work"
+  overlayfsDir="/mnt/overlayfs"
+  tryCount="1"
+
+  # run udevadm
+  wait_for_udev 10
+
+  # parce kernel cmdline args. rooturl needed
+  for x in $(cat /proc/cmdline); do
+    case $x in
+    rooturl=*)
+      export rooturl=${x#rooturl=}
+      ;;
+    maxTryCount=*)
+      export maxTryCount=${x#maxTryCount=}
+      ;;
+    esac
+  done
+
+  log_begin_msg "Loading modules"
+  modprobe squashfs || panic "can't modprobe squashfs"
+  modprobe af_packet || panic "can't modprobe af_packet"
+  modprobe overlay || panic "can't modprobe overlayfs"
+  log_success_msg "modules loaded"
+
+  log_begin_msg "Configure network"
+  configure_networking || panic "Can't configure network"
+  log_success_msg "Network configured"
+
+  log_begin_msg "Download rootfs"
+  while [ ! -f ${squashfsFile} ] && [ ${tryCount} -le ${maxTryCount} ]; do
+    wget ${rooturl} -O ${squashfsFile} ||
+      log_failure_msg "Can't download rootfs, count ${tryCount}"
+    tryCount=$(( ${tryCount} + 1 ))
+    sleep 0.5
+  done
+
+  if [ -f ${squashfsFile} ]
+  then
+    log_success_msg "Rootfs downloaded"
+  else
+    panic "Can't download rootfs"
+  fi
+
+  log_begin_msg "Mount rootfs"
+  mkdir -p $squashfsMountPoint
+  mount -t squashfs -o loop $squashfsFile $squashfsMountPoint ||
+    panic "Can't mount rootfs"
+  log_success_msg "Rootfs mounted"
+
+  log_begin_msg "Mount tmpfs"
+  mkdir -p $tmpfsMountPoint
+  mount -t tmpfs none $tmpfsMountPoint || panic "Tmpfs mount failed "
+  log_success_msg "Tmpfs mounted"
+
+  log_begin_msg "Mount overlayfs"
+  mkdir -p $overlayfsUppderDir $overlayfsWorkDir $overlayfsDir
+  mount -t overlay overlay -o\
+ lowerdir=$squashfsMountPoint\
+,upperdir=$overlayfsUppderDir\
+,workdir=$overlayfsWorkDir\
+    $overlayfsDir \
+    || panic "Overlayfs mount failed"
+  log_success_msg "Overlayfs mounted"
+
+  log_begin_msg "Move tmpfs and squashfs to new root"
+  mkdir -p $overlayfsDir/$tmpfsMountPoint $overlayfsDir/$squashfsMountPoint
+  mount --move $squashfsMountPoint $overlayfsDir/$squashfsMountPoint ||
+    panic "squashfs move failed"
+  mount --move $tmpfsMountPoint $overlayfsDir/$tmpfsMountPoint ||
+    panic "tmpfs move failed"
+  log_success_msg "Tmpfs and squashfs moved"
+
+  log_begin_msg "Move overlayfs to new root"
+  mount --move $overlayfsDir ${rootmnt}  || panic ""
+}
+# ============================================================================ #
+

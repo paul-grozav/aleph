@@ -35,6 +35,9 @@ if [ "${distro_dir}" == "/" ] ; then
 else
   distro_dir="${distro_dir}/distribution_content"
 fi &&
+if [ ! -d ${distro_dir} ] ; then
+  mkdir -p ${distro_dir}
+fi &&
 
 
 
@@ -89,9 +92,360 @@ function run_in_container()
 
 
 # ============================================================================ #
-# Build the distribution inside the container
+# Build the Init RAM Disk - the kernel that starts systemd from the squashfs
 # ============================================================================ #
-function core__build()
+function core__build__pxe_kernel()
+{(
+  run_in_container || {
+#    echo "Nothing to do outside of container" &&
+    exit 0
+  } &&
+
+  echo "Building Aleph Core - PXE kernel ..." &&
+
+  echo "Installing packages..." &&
+  DEBIAN_FRONTEND=noninteractive apt-get update &&
+  # live-boot - installed to provide wget inside ram-disk, might only need some
+  #   smaller dependency of it.
+  DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    linux-image-amd64 \
+    live-boot \
+  &&
+
+#  echo "Detecting kernel version ..." &&
+#  kernel_version="$(dpkg -l | grep linux-image | grep -v "meta-package" |
+#    awk '{print $2}' | awk -F'-' '{print $3"-"$4"-"$5}')" &&
+#  echo "Detected kernel version : ${kernel_version}" &&
+
+  echo "Setting kernel modules ..." &&
+  cp \
+    ${project_root}/fs/core/etc/initramfs-tools/modules \
+    /etc/initramfs-tools/modules &&
+
+  echo "Setting PXE script ..." &&
+  cp \
+    ${project_root}/fs/core/usr/share/initramfs-tools/scripts/pxe \
+    /usr/share/initramfs-tools/scripts/pxe &&
+
+  echo "Generating initramfs/kernel file ..." &&
+  update-initramfs -u -k all &&
+
+  echo "Renaming initramfs/kernel file ..." &&
+#  cp /boot/initrd.img-${kernel_version} ${distro_dir}/aleph.ird &&
+  cp /boot/initrd.img-* ${distro_dir}/aleph.ird &&
+
+  echo "Removing packages..." &&
+  DEBIAN_FRONTEND=noninteractive apt-get purge -y \
+    linux-image-amd64 \
+    live-boot \
+  &&
+  DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
+  DEBIAN_FRONTEND=noninteractive apt-get clean &&
+
+  exit 0
+)}
+
+
+
+
+# ============================================================================ #
+# Build the core PXE squashfs
+# https://gitlab.com/tancredi-paul-grozav/aleph/-/jobs/artifacts/main/raw/distribution_content/filesystem.squashfs?job=build
+# ============================================================================ #
+function core__build__pxe_squashfs()
+{(
+  run_in_container || {
+#    echo "Nothing to do outside of container" &&
+    exit 0
+  } &&
+
+  echo "Building Aleph Core - PXE squashfs ..." &&
+
+  echo "Installing packages..." &&
+  DEBIAN_FRONTEND=noninteractive apt-get update &&
+  DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    debootstrap \
+    squashfs-tools \
+  &&
+
+  # Clean chroot dir
+  if [ -d ${distro_dir}/chroot ]
+  then
+    echo "Clearing ${distro_dir}/chroot/* ..." &&
+    rm -rf ${distro_dir}/chroot/*
+  else
+    echo "Creating directory ${distro_dir}/chroot ..." &&
+    mkdir -p ${distro_dir}/chroot
+  fi &&
+
+  echo "Creating minimal debian system (debootstrap)  ..." &&
+  # buster = debian 10
+  debootstrap \
+    --arch=amd64 \
+    --components=main,non-free \
+    --variant=minbase \
+    buster \
+    ${distro_dir}/chroot \
+    http://ftp.ro.debian.org/debian/ \
+  &&
+
+  # Call the setup function/body inside the chroot
+  declare -f core__build__pxe_squashfs__setup | tail -n +3 | head -n -1 |
+    chroot ${distro_dir}/chroot &&
+
+  echo -n "Copying this script to /root/aleph.sh to be called at startup ..." &&
+  cp ${project_root}/aleph.sh ${distro_dir}/chroot/root/aleph.sh &&
+
+  squash_fs_file="${distro_dir}/filesystem.squashfs" &&
+  echo "Removing previous Squash filesystem file: ${squash_fs_file}" &&
+  ( [ -f ${squash_fs_file} ] && rm -f ${squash_fs_file} || true ) &&
+
+  echo "Compress the chroot environment into a Squash filesystem." &&
+  mksquashfs ${distro_dir}/chroot ${squash_fs_file} -e boot &&
+
+  echo "Removing chroot dir ${distro_dir}/chroot ..." &&
+  rm -rf ${distro_dir}/chroot &&
+
+  echo "Removing packages..." &&
+  DEBIAN_FRONTEND=noninteractive apt-get purge -y \
+    debootstrap \
+    squashfs-tools \
+  &&
+  DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
+  DEBIAN_FRONTEND=noninteractive apt-get clean &&
+
+  exit 0
+)}
+
+
+
+
+
+# ============================================================================ #
+# PRIVATE: Build the core PXE squashfs - setup the system
+# ============================================================================ #
+function core__build__pxe_squashfs__setup()
+{(
+    set -x && # Start debugging
+    cat /etc/resolv.conf &&
+
+    echo "Setting hostname ..." &&
+    echo "aleph" > /etc/hostname &&
+
+    echo "Setting root's password to aleph ..." &&
+    echo root:aleph | chpasswd &&
+
+    echo "Installing extra packages ..." &&
+#    apt-cache search linux-image &&
+    DEBIAN_FRONTEND=noninteractive apt-get update &&
+    # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/distribution_content/chroot/usr/lib/systemd" &&
+    # for PXE boot, i don't need to install the kernel: linux-image-amd64 it probably uses init-ram-disk, not needed: live-boot, but systemd-sysv is required as it is the init system
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y systemd-sysv &&
+
+      (
+        echo "Installing docker ..." &&
+        # might also require: fuse-overlayfs
+        # install packages to allow apt to use a repository over HTTPS
+        DEBIAN_FRONTEND=noninteractive apt-get \
+          install -y --no-install-recommends \
+          apt-transport-https ca-certificates curl gnupg-agent gnupg2 \
+          software-properties-common &&
+        # Add Docker's official GPG key
+        curl -fsSL https://download.docker.com/linux/debian/gpg |
+          apt-key add - &&
+        # set up the stable docker repository
+        add-apt-repository \
+          "deb [arch=amd64] https://download.docker.com/linux/debian \
+          $(lsb_release -cs) \
+          stable" &&
+        # Get list of docker packages from repository
+        DEBIAN_FRONTEND=noninteractive apt-get update &&
+        # Install docker daemon and client
+        DEBIAN_FRONTEND=noninteractive apt-get \
+          install -y --no-install-recommends \
+          docker-ce docker-ce-cli containerd.io &&
+        # Docker install will fail at pkg: aufs-dkms
+        # docker-compose ???
+
+        # Trying to start docker in chroot inside container
+        # mount -o bind /proc /distribution_content/chroot/proc/
+        # mount -o bind /sys /distribution_content/chroot/sys/
+        # /usr/bin/cgroupfs-mount
+        # /usr/bin/dockerd -H unix://
+
+        # docker run --rm hello-world &&
+        # docker image rm hello-world ;
+        # return 0 even if docker installation will fail
+        systemctl enable docker ;
+
+        # https://itectec.com/superuser/iptables-1-8-2-failed-to-initialize-nft-protocol-not-supported/
+        update-alternatives --set iptables /usr/sbin/iptables-legacy &&
+
+        exit 0
+      ) &&
+
+    echo "Install startup service ..." &&
+     # called later at xfce startup
+    (
+      (cat - <<EOF2
+[Unit]
+Description=Aleph core start service
+
+[Service]
+ExecStart=/root/aleph.sh --core__start
+
+[Install]
+WantedBy=multi-user.target
+EOF2
+      ) > /etc/systemd/system/aleph_core_start.service &&
+      systemctl enable aleph_core_start
+    ) &&
+
+    DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
+    DEBIAN_FRONTEND=noninteractive apt-get clean &&
+    echo "exit chroot - back to container ..." &&
+    exit 0
+    (
+      packages="" &&
+      # See contents of package:
+      # https://packages.debian.org/buster/amd64/PACKAGE_NAME/filelist
+      # search for binary in packages:
+      # https://packages.debian.org/cgi-bin/search_contents.pl?word=lspci&searchmode=searchfiles&case=insensitive&version=stable&arch=i386
+      # Kernel
+      packages="${packages} linux-image-amd64" && # kernel
+      packages="${packages} systemd-sysv" && # systemd init - or start my_APP???
+      packages="${packages} live-boot" && # boot configuration for live systems
+      # SysAdmin: pulseaudio, touchpad-click
+      packages="${packages} net-tools" && # ifconfig,netstat,route,arp,rarp
+      packages="${packages} telnet" && # telnet
+      packages="${packages} ifupdown" && # ifup, ifdown
+      packages="${packages} iputils-ping" && # ping, ping4, ping6
+      packages="${packages} iproute2" && # ip, ss
+      packages="${packages} dnsutils" && # host, dig, nslookup
+      packages="${packages} openssh-client" && # ssh
+      packages="${packages} openssh-server" && # sshd
+      packages="${packages} nmap" && # nmap
+      packages="${packages} wget" && # wget
+      packages="${packages} ca-certificates" && #recognize CA authorty and certs
+      packages="${packages} lsof" && # lsof
+      packages="${packages} strace" && # strace
+      packages="${packages} procps" && # ps,kill,free,top,uptime,watch,sysctl
+#      packages="${packages} upower powertop" && # monitor electrical power usage
+      packages="${packages} fdisk" && # fdisk - partitioning
+      packages="${packages} pciutils" && # lspci
+      packages="${packages} usbutils" && # lsusb
+      packages="${packages} lshw" && # lshw
+      packages="${packages} dmidecode" && # dmidecode
+      packages="${packages} hdparm" && # hdparm
+      packages="${packages} smartmontools" && # smartctl
+      packages="${packages} wireless-tools" && # iwlist, iwconfig
+#      packages="${packages} lm-sensors" && # lm-sensors
+      # For WPA & WPA2 wifi security
+      packages="${packages} wpasupplicant" && # wpa_passphrase, wpa_supplicant
+      packages="${packages} isc-dhcp-client" && # dhclient
+      packages="${packages} rsyslog" && # rsyslogd
+      # drivers / firmware
+      # tablet Asus T101 - wifi - Qualcomm Atheros QCA9377
+#      packages="${packages} firmware-atheros" &&
+      # tablet Asus T101 - sound - alsa_card.platform-cht-bsw-rt5645.
+#      packages="${packages} firmware-intel-sound" &&
+      # Utilities:
+      packages="${packages} tmux" && # tmux
+      packages="${packages} nano" && # nano
+      packages="${packages} less" && # less
+
+      # noninteractive set because packet keyboard-configuration asks for layout
+      DEBIAN_FRONTEND=noninteractive \
+        apt-get install -y --no-install-recommends ${packages}
+    ) &&
+
+    # You probably want to disable this for production
+    echo "SSH daemon PermitRootLogin yes ..." &&
+    echo "PermitRootLogin yes" >> /etc/ssh/sshd_config &&
+
+    echo "Installing additional software ..." &&
+    (
+      #exit 0 &&
+      echo &&
+      (
+        echo "Installing docker ..." &&
+        # install packages to allow apt to use a repository over HTTPS
+        DEBIAN_FRONTEND=noninteractive apt-get \
+          install -y --no-install-\
+          apt-transport-https ca-certificates curl gnupg-agent \
+          software-properties-common &&
+        # Add Docker's official GPG key
+        curl -fsSL https://download.docker.com/linux/debian/gpg |
+          apt-key add - &&
+        # set up the stable docker repository
+        add-apt-repository \
+          "deb [arch=amd64] https://download.docker.com/linux/debian \
+          $(lsb_release -cs) \
+          stable" &&
+        # Get list of docker packages from repository
+        apt-get update &&
+        # Install docker daemon and client
+        apt-get install -y docker-ce docker-ce-cli containerd.io &&
+        # Docker install will fail at pkg: aufs-dkms
+        # docker-compose ???
+
+        # Trying to start docker in chroot inside container
+        # mount -o bind /proc /distribution_content/chroot/proc/
+        # mount -o bind /sys /distribution_content/chroot/sys/
+        # /usr/bin/cgroupfs-mount
+        # /usr/bin/dockerd -H unix://
+
+        docker run --rm hello-world &&
+        docker image rm hello-world ;
+        # return 0 even if docker installation will fail
+        systemctl enable docker ;
+        exit 0
+      ) &&
+      echo &&
+      (
+        exit 0 &&
+        echo "Installing Google Chrome" &&
+        deb_name="google-chrome-stable_current_amd64.deb" &&
+        wget https://dl.google.com/linux/direct/${deb_name} &&
+        apt-get install -y ./${deb_name} ;
+        # Chrome will fail at pkg: aufs-dkms
+        rm -f ./${deb_name} &&
+        exit 0
+      ) &&
+      echo &&
+      (
+        exit 0 &&
+        echo "Installing NoMachine ..." &&
+        latest_version="$(wget -qO- \
+	          "https://www.nomachine.com/download/download&id=2" |
+          grep Version: -A 3 | tail -n1 | awk -F'[<>]' '{print $3}')" &&
+        short_version="$(echo ${latest_version} | awk -F'.' '{print $1"."$2}')" &&
+        wget https://download.nomachine.com/download/${short_version}/Linux/nomachine_${latest_version}_amd64.deb &&
+        apt-get install ./nomachine_${latest_version}_amd64.deb ;
+        # NoMachine will fail at pkg: aufs-dkms
+        rm -f ./nomachine_${latest_version}_amd64.deb &&
+        exit 0
+        # /var/NX/nx - connection files
+      ) &&
+
+      exit 0
+    ) &&
+
+    apt-get clean &&
+
+
+    set +x && # Stop debugging
+    exit 0
+)}
+
+
+
+
+
+# ============================================================================ #
+# Build the core .iso
+# ============================================================================ #
+function core__build__iso()
 {(
   run_in_container || {
     # After running it in container, do outside:
@@ -103,21 +457,13 @@ function core__build()
     exit 0
   } &&
 
-  echo "Building Aleph Core ..." &&
-
-  if [ ! -d ${distro_dir} ] ; then
-    mkdir -p ${distro_dir}
-  fi &&
-
-  if [ "$(ls -A ${distro_dir})" ]; then
-    echo -n "distro_dir=${distro_dir} is not empty." &&
-    echo " Please clear it before rebuilding" &&
-    rm -rf ${distro_dir}/* &&
-    echo "I cleared it"
-#    exit 1
+  echo "Checking requirements ..." &&
+  if [ ! -f ${distro_dir}/filesystem.squashfs ]; then
+    echo "Missing ${distro_dir}/filesystem.squashfs . build it using job" &&
+    exit 1
   fi
 
-  core__build__squashfs &&
+  echo "Building Aleph Core .iso ..." &&
   exit 0
 
   echo -n "Create directories that will contain files for our live" &&
@@ -225,256 +571,6 @@ function core__build()
 
 
 
-# ============================================================================ #
-# Build the core squashfs
-# https://gitlab.com/tancredi-paul-grozav/aleph/-/jobs/artifacts/main/raw/distribution_content/filesystem.squashfs?job=build
-# ============================================================================ #
-function core__build__squashfs()
-{(
-  run_in_container || {
-#    echo "Nothing to do outside of container" &&
-    exit 0
-  } &&
-
-  echo "Building Aleph Core - squashfs ..." &&
-
-  # Install stuff needed to build the core iso/OS
-  DEBIAN_FRONTEND=noninteractive apt-get update &&
-  DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-    debootstrap \
-    squashfs-tools \
-  &&
-
-  # Clean chroot dir
-  if [ -d ${distro_dir}/chroot ]
-  then
-    echo "Clearing ${distro_dir}/chroot/* ..." &&
-    rm -rf ${distro_dir}/chroot/*
-  else
-    echo "Creating directory ${distro_dir}/chroot ..." &&
-    mkdir -p ${distro_dir}/chroot
-  fi &&
-
-  echo "Creating minimal debian system (debootstrap)  ..." &&
-  debootstrap \
-    --arch=amd64 \
-    --components=main,non-free \
-    --variant=minbase \
-    stable \
-    ${distro_dir}/chroot \
-    http://ftp.ro.debian.org/debian/ \
-  &&
-
-  # Call the setup function/body inside the chroot
-  declare -f core__build__squashfs__setup | tail -n +3 | head -n -1 |
-    chroot ${distro_dir}/chroot &&
-
-  echo -n "Copying this script to /root/aleph.sh to be called at startup ..." &&
-  cp ${project_root}/aleph.sh ${distro_dir}/chroot/root/aleph.sh &&
-
-  squash_fs_file="${distro_dir}/filesystem.squashfs" &&
-  echo "Removing previous Squash filesystem file: ${squash_fs_file}" &&
-  ( [ -f ${squash_fs_file} ] && rm -f ${squash_fs_file} || true ) &&
-
-  echo "Compress the chroot environment into a Squash filesystem." &&
-  mksquashfs ${distro_dir}/chroot ${squash_fs_file} -e boot &&
-
-  echo "Removing chroot dir ${distro_dir}/chroot ..." &&
-  rm -rf ${distro_dir}/chroot &&
-
-  echo "Publishing squash file system ..." &&
-  mv ${distro_dir} $(pwd)/public/ &&
-
-  echo "Removing packages..." &&
-  DEBIAN_FRONTEND=noninteractive apt-get purge -y \
-    debootstrap \
-    squashfs-tools \
-  &&
-  DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
-  DEBIAN_FRONTEND=noninteractive apt-get clean &&
-
-  exit 0
-)}
-
-
-
-
-# ============================================================================ #
-# PRIVATE: Build the core squashfs - setup the system
-# ============================================================================ #
-function core__build__squashfs__setup()
-{(
-    set -x && # Start debugging
-    cat /etc/resolv.conf &&
-
-    echo "Setting hostname ..." &&
-    echo "aleph" > /etc/hostname &&
-
-    echo "Setting root's password to aleph ..." &&
-    echo root:aleph | chpasswd &&
-
-    echo "Installing extra packages ..." &&
-#    apt-cache search linux-image &&
-    DEBIAN_FRONTEND=noninteractive apt-get update &&
-    # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/distribution_content/chroot/usr/lib/systemd" &&
-    # for PXE boot, i don't need to install the kernel: linux-image-amd64 it probably uses init-ram-disk, not needed: live-boot, but systemd-sysv is required as it is the init system
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y systemd-sysv &&
-    DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
-    DEBIAN_FRONTEND=noninteractive apt-get clean &&
-    echo "exit chroot - back to container ..." &&
-    exit 0
-    (
-      packages="" &&
-      # See contents of package:
-      # https://packages.debian.org/buster/amd64/PACKAGE_NAME/filelist
-      # search for binary in packages:
-      # https://packages.debian.org/cgi-bin/search_contents.pl?word=lspci&searchmode=searchfiles&case=insensitive&version=stable&arch=i386
-      # Kernel
-      packages="${packages} linux-image-amd64" && # kernel
-      packages="${packages} systemd-sysv" && # systemd init - or start my_APP???
-      packages="${packages} live-boot" && # boot configuration for live systems
-      # SysAdmin: pulseaudio, touchpad-click
-      packages="${packages} net-tools" && # ifconfig,netstat,route,arp,rarp
-      packages="${packages} telnet" && # telnet
-      packages="${packages} ifupdown" && # ifup, ifdown
-      packages="${packages} iputils-ping" && # ping, ping4, ping6
-      packages="${packages} iproute2" && # ip, ss
-      packages="${packages} dnsutils" && # host, dig, nslookup
-      packages="${packages} openssh-client" && # ssh
-      packages="${packages} openssh-server" && # sshd
-      packages="${packages} nmap" && # nmap
-      packages="${packages} wget" && # wget
-      packages="${packages} ca-certificates" && #recognize CA authorty and certs
-      packages="${packages} lsof" && # lsof
-      packages="${packages} strace" && # strace
-      packages="${packages} procps" && # ps,kill,free,top,uptime,watch,sysctl
-#      packages="${packages} upower powertop" && # monitor electrical power usage
-      packages="${packages} pciutils" && # lspci
-      packages="${packages} usbutils" && # lsusb
-      packages="${packages} lshw" && # lshw
-      packages="${packages} dmidecode" && # dmidecode
-      packages="${packages} hdparm" && # hdparm
-      packages="${packages} smartmontools" && # smartctl
-      packages="${packages} wireless-tools" && # iwlist, iwconfig
-#      packages="${packages} lm-sensors" && # lm-sensors
-      # For WPA & WPA2 wifi security
-      packages="${packages} wpasupplicant" && # wpa_passphrase, wpa_supplicant
-      packages="${packages} isc-dhcp-client" && # dhclient
-      packages="${packages} rsyslog" && # rsyslogd
-      # drivers / firmware
-      # tablet Asus T101 - wifi - Qualcomm Atheros QCA9377
-#      packages="${packages} firmware-atheros" &&
-      # tablet Asus T101 - sound - alsa_card.platform-cht-bsw-rt5645.
-#      packages="${packages} firmware-intel-sound" &&
-      # Utilities:
-      packages="${packages} tmux" && # tmux
-      packages="${packages} nano" && # nano
-      packages="${packages} less" && # less
-
-      # noninteractive set because packet keyboard-configuration asks for layout
-      DEBIAN_FRONTEND=noninteractive \
-        apt-get install -y --no-install-recommends ${packages}
-    ) &&
-
-    # You probably want to disable this for production
-    echo "SSH daemon PermitRootLogin yes ..." &&
-    echo "PermitRootLogin yes" >> /etc/ssh/sshd_config &&
-
-    echo "Installing additional software ..." &&
-    (
-      #exit 0 &&
-      echo &&
-      (
-        echo "Installing docker ..." &&
-        # install packages to allow apt to use a repository over HTTPS
-        apt-get install -y apt-transport-https ca-certificates curl gnupg-agent\
-          software-properties-common &&
-        # Add Docker's official GPG key
-        curl -fsSL https://download.docker.com/linux/debian/gpg |
-          apt-key add - &&
-        # set up the stable docker repository
-        add-apt-repository \
-          "deb [arch=amd64] https://download.docker.com/linux/debian \
-          $(lsb_release -cs) \
-          stable" &&
-        # Get list of docker packages from repository
-        apt-get update &&
-        # Install docker daemon and client
-        apt-get install -y docker-ce docker-ce-cli containerd.io &&
-        # Docker install will fail at pkg: aufs-dkms
-        # docker-compose ???
-
-        # Trying to start docker in chroot inside container
-        # mount -o bind /proc /distribution_content/chroot/proc/
-        # mount -o bind /sys /distribution_content/chroot/sys/
-        # /usr/bin/cgroupfs-mount
-        # /usr/bin/dockerd -H unix://
-
-        docker run --rm hello-world &&
-        docker image rm hello-world ;
-        # return 0 even if docker installation will fail
-        systemctl enable docker ;
-        exit 0
-      ) &&
-      echo &&
-      (
-        exit 0 &&
-        echo "Installing Google Chrome" &&
-        deb_name="google-chrome-stable_current_amd64.deb" &&
-        wget https://dl.google.com/linux/direct/${deb_name} &&
-        apt-get install -y ./${deb_name} ;
-        # Chrome will fail at pkg: aufs-dkms
-        rm -f ./${deb_name} &&
-        exit 0
-      ) &&
-      echo &&
-      (
-        exit 0 &&
-        echo "Installing NoMachine ..." &&
-        latest_version="$(wget -qO- \
-	          "https://www.nomachine.com/download/download&id=2" |
-          grep Version: -A 3 | tail -n1 | awk -F'[<>]' '{print $3}')" &&
-        short_version="$(echo ${latest_version} | awk -F'.' '{print $1"."$2}')" &&
-        wget https://download.nomachine.com/download/${short_version}/Linux/nomachine_${latest_version}_amd64.deb &&
-        apt-get install ./nomachine_${latest_version}_amd64.deb ;
-        # NoMachine will fail at pkg: aufs-dkms
-        rm -f ./nomachine_${latest_version}_amd64.deb &&
-        exit 0
-        # /var/NX/nx - connection files
-      ) &&
-
-      exit 0
-    ) &&
-
-    apt-get clean &&
-
-
-    echo "Install startup service ..." &&
-     # called later at xfce startup
-    (
-      (cat - <<EOF2
-[Unit]
-Description=Aleph core start service
-After=docker.service
-
-[Service]
-ExecStart=/root/aleph.sh --core__start
-
-[Install]
-WantedBy=multi-user.target
-EOF2
-      ) > /etc/systemd/system/aleph_core_start.service &&
-      systemctl enable aleph_core_start
-    ) &&
-
-
-    set +x && # Stop debugging
-    exit 0
-)}
-
-
-
-
 
 # ============================================================================ #
 # Start (boot) the distribution
@@ -510,6 +606,11 @@ function core__emulate()
 # ============================================================================ #
 function core__start()
 {
+  mkdir /data &&
+  mount /dev/sda1 /data &&
+  /data/start.sh &&
+  true ;
+  exit 0
   # Does not work well from SystemD service
   # OPTION 1 - start Desktop environment directly
   # lastly, let the Xfce run
@@ -1045,15 +1146,16 @@ function x__xfce__start()
 # ============================================================================ #
 function print_help()
 {
-  echo "--core__build            Build the core .iso inside the container." &&
-  echo "--core__build__squashfs  Build the core squashfs." &&
-  echo "--core__emulate          Boot the distribution iso inside qemu." &&
-  echo "--core__start            Start programs once the distribution booted."&&
-  echo "--x__build               Build the aleph container." &&
-  echo "--x__start               Start the aleph container." &&
-  echo "--x__xfce__panel__ram    Show ram usage in XFCE4 panel." &&
-  echo "--x__xfce__start         Script that runs when XFCE4 starts." &&
-  echo "--help                   Print the help message."
+  echo "--core__build__pxe_kernel  Build the core PXE kernel." &&
+  echo "--core__build__pxe_squashfs  Build the core PXE squashfs." &&
+  echo "--core__build__iso         Build the core .iso." &&
+  echo "--core__emulate            Boot the distribution iso inside qemu." &&
+  echo "--core__start              Start script once the distribution booted."&&
+  echo "--x__build                 Build the aleph container." &&
+  echo "--x__start                 Start the aleph container." &&
+  echo "--x__xfce__panel__ram      Show ram usage in XFCE4 panel." &&
+  echo "--x__xfce__start           Script that runs when XFCE4 starts." &&
+  echo "--help                     Print the help message."
 }
 
 
@@ -1071,8 +1173,9 @@ fi &&
 # Case
 if [ $1 ]; then
   case "$1" in
-    --core__build) core__build ; exit $? ;;
-    --core__build__squashfs) core__build__squashfs ; exit $? ;;
+    --core__build__pxe_kernel) core__build__pxe_kernel ; exit ${?} ;;
+    --core__build__pxe_squashfs) core__build__pxe_squashfs ; exit $? ;;
+    --core__build__iso) core__build__iso ; exit $? ;;
     --core__emulate) core__emulate ; exit $? ;;
     --core__start) core__start ; exit $? ;;
     --x__build) x__build ; exit $? ;;

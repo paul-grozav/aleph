@@ -1,0 +1,153 @@
+# ============================================================================ #
+# Author: Tancredi-Paul Grozav <paul@grozav.info>
+# ============================================================================ #
+# Got this list from a debian machine, by running:
+# lsmod | awk '{print $1}' | sort | uniq | tail -n +2 | tr "\n" " "
+# ============================================================================ #
+# List of modules that you want to include in your initramfs.
+# They will be loaded at boot time in the order below.
+#
+# Syntax:  module_name [args ...]
+#
+# You must run update-initramfs(8) to effect this change.
+#
+# Examples:
+#
+# raid1
+# sd_mod
+# ============================================================================ #
+ac
+acpi_cpufreq
+aes_x86_64
+ahci
+ansi_cprng
+ata
+aufs
+autofs4
+b43
+battery
+bcma
+bluetooth
+br_netfilter
+bridge
+btbcm
+btintel
+btrfs
+btrtl
+btusb
+button
+cfg80211
+coretemp
+crc16
+crc32c_generic
+cryptd
+crypto_simd
+dm_mod
+drbg
+drm
+drm_kms_helper
+e1000e
+ecb
+ecdh_generic
+ehci_hcd
+ehci_pci
+evdev
+ext4
+fan
+fat
+fscrypto
+fuse
+glue_helper
+hfs
+hfsplus
+hp_wmi
+i2c_algo_bit
+i915
+iTCO_vendor_support
+iTCO_wdt
+ip_tables
+ipt_MASQUERADE
+iptable_filter
+iptable_nat
+jbd2
+jfs
+joydev
+libahci
+libata
+libcrc32c
+llc
+loop
+lpc_ich
+mac80211
+mbcache
+mfd_core
+minix
+mmc_core
+msdos
+nf_conntrack
+nf_conntrack_netlink
+nf_defrag_ipv4
+nf_defrag_ipv6
+nf_nat
+nf_nat_ipv4
+nf_tables
+nfnetlink
+nft_chain_nat_ipv4
+nft_compat
+nft_counter
+overlay
+pcc_cpufreq
+pcmcia
+pcmcia_core
+pcspkr
+psmouse
+qnx4
+raid6_pq
+rfkill
+rng_core
+sata
+scsi
+scsi_mod
+sd_mod
+serio_raw
+sg
+snd
+snd_hda_codec
+snd_hda_codec_analog
+snd_hda_codec_generic
+snd_hda_codec_hdmi
+snd_hda_core
+snd_hda_intel
+snd_hwdep
+snd_pcm
+snd_timer
+soundcore
+sparse_keymap
+squashfs
+ssb
+stp
+sunrpc
+thermal
+tun
+ufs
+uhci_hcd
+usb_common
+usbcore
+veth
+vfat
+video
+wmi
+wmi_bmof
+x_tables
+xfrm_algo
+xfrm_user
+xfs
+xor
+xt_addrtype
+xt_conntrack
+xt_nat
+xt_tcpudp
+xxhash
+zstd_compress
+zstd_decompress
+# ============================================================================ #

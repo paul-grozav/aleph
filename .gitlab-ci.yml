@@ -1,12 +1,12 @@
 image: debian:10.10
 
-build_pxe_squashfs:
+core__build__pxe_squashfs:
   stage: build
   tags:
     - docker
     - linux
   script:
-    - ./aleph.sh --core__build
+    - ./aleph.sh --core__build__pxe_squashfs
   artifacts:
     paths:
       - distribution_content/filesystem.squashfs
@@ -16,9 +16,37 @@ build_pxe_squashfs:
       #   paths:
       #     - "*.o"
 
+core__build__pxe_kernel:
+  stage: build
+  tags:
+    - docker
+    - linux
+  script:
+    - ./aleph.sh --core__build__pxe_kernel
+  artifacts:
+    paths:
+      - distribution_content/aleph.ird
+    expire_in: 1 hour
+
+#core__build__iso:
+#  stage: build
+#  tags:
+#    - docker
+#    - linux
+#  script:
+#    - ./aleph.sh --core__build__iso
+#  artifacts:
+#    paths:
+#      - distribution_content/filesystem.squashfs
+#    expire_in: 1 hour
+      # depending on your build setup it's most likely a good idea to cache outputs to reduce the build time
+      # cache:
+      #   paths:
+      #     - "*.o"
+
 pages:
   stage: deploy
-  needs: ["build_pxe_squashfs"]
+  needs: ["core__build__pxe_squashfs", "core__build__pxe_kernel"]
   script:
     - mv distribution_content public/distribution_content
   artifacts:
