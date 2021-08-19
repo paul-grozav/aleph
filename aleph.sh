@@ -80,8 +80,8 @@ function run_in_container()
     exit 1
   fi
   # Fix dns issue in podman
-  gw_ip="$(ip route | grep -w default | awk '{print $3}')" &&
-  echo "nameserver ${gw_ip}" > /etc/resolv.conf &&
+  # gw_ip="$(ip route | grep -w default | awk '{print $3}')" &&
+  # echo "nameserver ${gw_ip}" > /etc/resolv.conf &&
   # Continue running the caller function
   exit 0
 )}
@@ -95,6 +95,15 @@ function run_in_container()
 
 # ============================================================================ #
 # Build the Init RAM Disk - the kernel that starts systemd from the squashfs
+# ============================================================================ #
+# PXE booting instructions.
+# use memdisk as the kernel and load ipxe.iso
+# use this ipxe config to load the aleph distribution:
+#
+# kernel ${http-root}/bin/os/aleph/v1/aleph.krnl
+# initrd ${http-root}/bin/os/aleph/v1/aleph.ird
+# imgargs aleph.krnl console=ttyS0 console=tty0 rooturl=${http-root}/bin/os/aleph/v1/aleph.sfs boot=pxe maxTryCount=10
+# boot
 # ============================================================================ #
 function core__build__pxe_kernel()
 {(
@@ -132,9 +141,15 @@ function core__build__pxe_kernel()
   echo "Generating initramfs/kernel file ..." &&
   update-initramfs -u -k all &&
 
+  echo "Removing old kernel file ..." &&
+  rm -rf {distro_dir}/aleph.krnl &&
+
   echo "Renaming kernel file ..." &&
 #  cp /boot/vmlinuz-${kernel_version} ${distro_dir}/aleph.ird &&
   cp /boot/vmlinuz-* ${distro_dir}/aleph.krnl &&
+
+  echo "Removing old initram fs/disk file ..." &&
+  rm -rf {distro_dir}/aleph.ird &&
 
   echo "Renaming initram fs/disk file ..." &&
 #  cp /boot/initrd.img-${kernel_version} ${distro_dir}/aleph.ird &&
@@ -155,10 +170,10 @@ function core__build__pxe_kernel()
 
 
 # ============================================================================ #
-# Build the core PXE squashfs
+# Build the core squashfs
 # https://gitlab.com/tancredi-paul-grozav/aleph/-/jobs/artifacts/main/raw/distribution_content/aleph.sfs?job=build
 # ============================================================================ #
-function core__build__pxe_squashfs()
+function core__build__squashfs()
 {(
   run_in_container || {
 #    echo "Nothing to do outside of container" &&
@@ -185,18 +200,18 @@ function core__build__pxe_squashfs()
   fi &&
 
   echo "Creating minimal debian system (debootstrap)  ..." &&
-  # buster = debian 10
+  # use the same version as the container that was started.
   debootstrap \
     --arch=amd64 \
     --components=main,non-free \
     --variant=minbase \
-    buster \
+    $(. /etc/os-release && echo ${VERSION_CODENAME}) \
     ${distro_dir}/chroot \
     http://ftp.ro.debian.org/debian/ \
   &&
 
   # Call the setup function/body inside the chroot
-  declare -f core__build__pxe_squashfs__setup | tail -n +3 | head -n -1 |
+  declare -f core__build__squashfs__setup | tail -n +3 | head -n -1 |
     chroot ${distro_dir}/chroot &&
 
   echo -n "Copying this script to /root/aleph.sh to be called at startup ..." &&
@@ -204,7 +219,7 @@ function core__build__pxe_squashfs()
 
   squash_fs_file="${distro_dir}/aleph.sfs" &&
   echo "Removing previous Squash filesystem file: ${squash_fs_file}" &&
-  ( [ -f ${squash_fs_file} ] && rm -f ${squash_fs_file} || true ) &&
+  rm -f ${squash_fs_file} &&
 
   echo "Compress the chroot environment into a Squash filesystem." &&
   mksquashfs ${distro_dir}/chroot ${squash_fs_file} -e boot &&
@@ -228,9 +243,11 @@ function core__build__pxe_squashfs()
 
 
 # ============================================================================ #
-# PRIVATE: Build the core PXE squashfs - setup the system
+# PRIVATE: Build the core squashfs - setup the system
+# Note: If you change this function's name, please don't forget to update the
+#   caller above.
 # ============================================================================ #
-function core__build__pxe_squashfs__setup()
+function core__build__squashfs__setup()
 {(
     set -x && # Start debugging
     cat /etc/resolv.conf &&
@@ -244,9 +261,10 @@ function core__build__pxe_squashfs__setup()
     echo "Installing extra packages ..." &&
 #    apt-cache search linux-image &&
     DEBIAN_FRONTEND=noninteractive apt-get update &&
-    # export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/distribution_content/chroot/usr/lib/systemd" &&
-    # for PXE boot, i don't need to install the kernel: linux-image-amd64 it probably uses init-ram-disk, not needed: live-boot, but systemd-sysv is required as it is the init system
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y systemd-sysv &&
+    # systemd-sysv is required as it is the init system that will be started by
+    # the kernel
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      systemd-sysv &&
 
       (
         echo "Installing docker ..." &&
@@ -336,7 +354,7 @@ EOF2
       packages="${packages} lsof" && # lsof
       packages="${packages} strace" && # strace
       packages="${packages} procps" && # ps,kill,free,top,uptime,watch,sysctl
-#      packages="${packages} upower powertop" && # monitor electrical power usage
+#      packages="${packages} upower powertop" && #monitor electrical power usage
       packages="${packages} fdisk" && # fdisk - partitioning
       packages="${packages} pciutils" && # lspci
       packages="${packages} usbutils" && # lsusb
@@ -562,6 +580,9 @@ function core__build__iso()
   echo "Removing efi tmp folder..." &&
   rm -rf ${distro_dir}/tmp &&
 
+  echo "Removing old .iso file..." &&
+  rm -rf ${distro_dir}/aleph.iso &&
+
   echo "Create Bootable ISO/CD" &&
   xorriso \
     -as mkisofs \
@@ -584,18 +605,6 @@ function core__build__iso()
     ${distro_dir}/staging \
   &&
 
-# Add this to /etc/grub.d/40_custom to add the .iso to your existing GRUB.
-# Make sure you set the isofile var to the path relative to the partition.
-# Use "ls (hd0,2)" in GRUB's console to inspect the filesystem.
-
-#menuentry "Aleph ISO" --class os {
-#  insmod part_gpt
-#  set isofile="/v0.1.8.iso"
-#  loopback loop (hd0,gpt6)$isofile
-#  linux (loop)/live/vmlinuz boot=live findiso=${isofile}
-#  initrd (loop)/live/initrd
-#}
-
   echo "Removing staging folder..." &&
   rm -rf ${distro_dir}/staging &&
 
@@ -614,6 +623,19 @@ function core__build__iso()
   &&
   DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
   DEBIAN_FRONTEND=noninteractive apt-get clean &&
+
+# To boot this ISO in your existing GRUB, add this to /etc/grub.d/40_custom to
+# add the .iso to your existing GRUB. Make sure you set the isofile var to the
+# path relative to the partition. Use "ls (hd0,2)" in GRUB's console to inspect
+# the filesystem.
+
+#menuentry "Aleph ISO" --class os {
+#  insmod part_gpt
+#  set isofile="/v0.1.8.iso"
+#  loopback loop (hd0,gpt6)$isofile
+#  linux (loop)/live/vmlinuz boot=live findiso=${isofile}
+#  initrd (loop)/live/initrd
+#}
 
   exit 0
 )}
@@ -946,8 +968,8 @@ function x__build()
 # ============================================================================ #
 function x__start()
 {
-#  device="$(dmidecode | grep "System Information" -A 2 | tail -n 2 | awk -F':' \
-#    '{printf $2}' | awk -F'(' '{print $1}' | sed 's/^ *//g' | sed 's/ *$//')" &&
+#  device="$(dmidecode | grep "System Information" -A 2 | tail -n 2 | awk -F':'\
+#    '{printf $2}' | awk -F'(' '{print $1}' | sed 's/^ *//g' | sed 's/ *$//')"&&
 #  echo "Device = \"${device}\"" &&
 
   if [ ! -f ${container_marker} ]; then
@@ -1162,7 +1184,8 @@ function x__xfce__start()
   if [ "${device}" == "ASUSTeK COMPUTER INC. T101HA" ]; then
     # Rotate screen and reeduce brightness to save battery
     xrandr --output DSI-1 --rotate right --brightness 0.3 &&
-    # Rotate touch screen in horizontal mode (laptop) - libinput /dev/input/event11
+    # Rotate touch screen in horizontal mode (laptop)
+    # - libinput /dev/input/event11
     xinput set-prop \
       "SIS0457:00 0457:11ED" \
       "Coordinate Transformation Matrix" \
@@ -1197,7 +1220,7 @@ function x__xfce__start()
 function print_help()
 {
   echo "--core__build__pxe_kernel  Build the core PXE kernel." &&
-  echo "--core__build__pxe_squashfs  Build the core PXE squashfs." &&
+  echo "--core__build__squashfs    Build the core PXE squashfs." &&
   echo "--core__build__iso         Build the core .iso." &&
   echo "--core__emulate            Boot the distribution iso inside qemu." &&
   echo "--core__start              Start script once the distribution booted."&&
@@ -1216,28 +1239,29 @@ function print_help()
 # Case logic
 # ============================================================================ #
 # If no parameter
-if [ $# == 0 ]; then
+if [ ${#} == 0 ]; then
   print_help
 fi &&
 
 # Case
-if [ $1 ]; then
-  case "$1" in
-    --core__build__pxe_kernel) core__build__pxe_kernel ; exit ${?} ;;
-    --core__build__pxe_squashfs) core__build__pxe_squashfs ; exit $? ;;
-    --core__build__iso) core__build__iso ; exit $? ;;
-    --core__emulate) core__emulate ; exit $? ;;
-    --core__start) core__start ; exit $? ;;
-    --x__build) x__build ; exit $? ;;
-    --x__start) x__start ; exit $? ;;
-    --x__xfce__panel__ram) x__xfce__panel__ram ; exit ${?} ;;
-    --x__xfce__start) x__xfce__start ; exit ${?} ;;
-    --help) print_help ; exit $? ;;
-    *) print_help ; exit $? ;;
+exit_code=100 &&
+if [ ${1} ]; then
+  case "${1}" in
+    --core__build__pxe_kernel) core__build__pxe_kernel ; exit_code=${?} ;;
+    --core__build__squashfs) core__build__squashfs ; exit_code=${?} ;;
+    --core__build__iso) core__build__iso ; exit_code=${?} ;;
+    --core__emulate) core__emulate ; exit_code=${?} ;;
+    --core__start) core__start ; exit_code=${?} ;;
+    --x__build) x__build ; exit_code=${?} ;;
+    --x__start) x__start ; exit_code=${?} ;;
+    --x__xfce__panel__ram) x__xfce__panel__ram ; exit_code=${?} ;;
+    --x__xfce__start) x__xfce__start ; exit_code=${?} ;;
+    --help) print_help ; exit_code=${?} ;;
+    *) print_help ; exit_code=${?} ;;
     esac
 fi
 set +x && # Stop debugging
-exit 0
+exit ${exit_code}
 # ============================================================================ #
 
 

@@ -2,7 +2,7 @@
 # Author: Tancredi-Paul Grozav <paul@grozav.info>
 # ============================================================================ #
 # image version should match debian_base_image from aleph.sh
-image: debian:10.10
+image: debian:11.0
 # ============================================================================ #
 core__build__pxe_kernel:
   stage: build
@@ -17,13 +17,13 @@ core__build__pxe_kernel:
       - distribution_content/aleph.ird
     expire_in: 1 hour
 # ============================================================================ #
-core__build__pxe_squashfs:
+core__build__squashfs:
   stage: build
   tags:
     - docker
     - linux
   script:
-    - ./aleph.sh --core__build__pxe_squashfs
+    - ./aleph.sh --core__build__squashfs
   artifacts:
     paths:
       - distribution_content/aleph.sfs
@@ -40,7 +40,7 @@ core__build__iso:
     - docker
     - linux
   needs:
-    - core__build__pxe_squashfs
+    - core__build__squashfs
   script:
     - ./aleph.sh --core__build__iso
   artifacts:
@@ -52,7 +52,7 @@ pages:
   stage: deploy
   needs:
     - core__build__pxe_kernel
-    - core__build__pxe_squashfs
+    - core__build__squashfs
     - core__build__iso
   script:
     - mv distribution_content public/distribution_content

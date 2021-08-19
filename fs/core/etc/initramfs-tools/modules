@@ -19,6 +19,7 @@
 ac
 acpi_cpufreq
 aes_x86_64
+# af_packet # seems to be loaded in debian 10 even if not mentioned here
 ahci
 ansi_cprng
 ata
