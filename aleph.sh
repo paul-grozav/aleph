@@ -81,6 +81,7 @@ function run_in_container()
   fi
   # Fix dns issue in podman
   # gw_ip="$(ip route | grep -w default | awk '{print $3}')" &&
+  # gw_ip="192.168.0.1" &&
   # echo "nameserver ${gw_ip}" > /etc/resolv.conf &&
   # Continue running the caller function
   exit 0
@@ -88,6 +89,84 @@ function run_in_container()
 # ============================================================================ #
 # ============================================================================ #
 # ============================================================================ #
+
+
+
+
+
+# ============================================================================ #
+# Build the undionly.kpxe kernel to have DHCP serve the iPXE kernel directly
+# from the TFTP server.
+#
+# Or, boot the .iso from a USB / CD / DVD or, from the TFTP server, using:
+# PXE booting instructions:
+# use memdisk as the kernel and load ipxe.iso
+# use this ipxe config to load the aleph distribution:
+#
+# kernel ${http-root}/bin/os/aleph/v1/aleph.krnl
+# initrd ${http-root}/bin/os/aleph/v1/aleph.ird
+# imgargs aleph.krnl console=ttyS0 console=tty0 rooturl=${http-root}/bin/os/aleph/v1/aleph.sfs boot=pxe maxTryCount=10
+# boot
+# ============================================================================ #
+function core__build__pxe_iso()
+{(
+  run_in_container || {
+#    echo "Nothing to do outside of container" &&
+    exit 0
+  } &&
+
+  echo "Building Aleph Core - PXE iso ..." &&
+
+  echo "Installing packages..." &&
+  DEBIAN_FRONTEND=noninteractive apt-get update &&
+  # live-boot - installed to provide wget inside ram-disk, might only need some
+  #   smaller dependency of it.
+  DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+    git gcc libc6-dev binutils make perl liblzma-dev mtools mkisofs syslinux \
+    isolinux \
+  &&
+
+  # Download iPXE sources
+  cd / &&
+  git clone git://git.ipxe.org/ipxe.git &&
+  cd ipxe/src/ &&
+
+  ( cat - <<EOF > ./my_script.ipxe
+#!ipxe
+# ============================================================================ #
+# Author: Tancredi-Paul Grozav <paul@grozav.info>
+# ============================================================================ #
+echo Performing DHCP on first network interface
+# dhcp net0
+# should auto detect network card ?
+dhcp
+
+# Continue booting from HTTP server
+chain http://alice.home.server.paul.grozav.info:1027/
+# chain http://192.168.0.2:1027/
+# chain http://boot.ipxe.org/demo/boot.php
+# ============================================================================ #
+EOF
+  ) &&
+
+  # Build:
+  # 1. ./bin/undionly.kpxe - and make DHCP point to the kpxe file served by TFTP
+  # 2. ./bin/ipxe.iso - and boot it over TFTP or from a USB / CD / DVD / ...
+  make EMBED=my_script.ipxe &&
+
+  cp ./bin/undionly.kpxe ${distro_dir}/undionly.kpxe &&
+  cp ./bin/ipxe.iso ${distro_dir}/ipxe.iso &&
+
+  echo "Removing packages..." &&
+  DEBIAN_FRONTEND=noninteractive apt-get purge -y \
+    git gcc libc6-dev binutils make perl liblzma-dev mtools mkisofs syslinux \
+    isolinux \
+  &&
+  DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
+  DEBIAN_FRONTEND=noninteractive apt-get clean &&
+
+  exit 0
+)}
 
 
 
@@ -678,11 +757,76 @@ function core__emulate()
 # ============================================================================ #
 function core__start()
 {
-  mkdir /data &&
-  mount /dev/sda1 /data &&
-  /data/start.sh &&
+  mkdir -p /data &&
+  # V1
+  # if [ "$(mount | grep -w /data | wc -l)" == "0" ]; then
+    # mount /dev/sda1 /data
+  # fi &&
+  # cp /data/start.sh /tmp/start.sh &&
+  # /tmp/start.sh && # following example of start.sh contents:
+
+  # V2
+  mount -t tmpfs -o size=1024m tmpfs /data &&
+  mkdir /data/docker &&
+  # cat /etc/resolv.conf &&
+  # echo "nameserver 192.168.0.1" > /etc/resolv.conf &&
+  apt install -y nano tmux procps kmod iputils-ping less &&
+  export PATH="${PATH}:/sbin" &&
+  mkdir -p /etc/docker &&
+  ( echo "{
+  \"data-root\": \"/data/docker\",
+  \"hosts\": [\"tcp://0.0.0.0:2375\"]
+}" ) > /etc/docker/daemon.json &&
+  # docker is frozen because of bad data-root
+  # kill it and it'll start at first docker client cli invocation
+  kill -9 $(cat /run/docker.pid) ;
+  ( dockerd & ) && sleep 20 &&
+  # systemctl start docker &&
+  #if [ "$(docker ps | grep -w web | awk '{print $NF}')" != "web" ]
+  #then
+  #  docker stop -t0 web ;
+  #  docker rm web ;
+    DOCKER_HOST="tcp://127.0.0.1:2375" docker run -it --rm -d -p 8080:80 \
+      --name web nginx &&
+  #fi &&
+
+  # mkdir -p /etc/docker /data/docker &&
+  # echo "{\"data-root\": \"/data/docker\"}" > /etc/docker/daemon.json &&
+  # kill -9 $(cat /run/docker.pid) ;
+  # docker run -it --rm -d -p 8080:80 --name web nginx &&
+  # # Start stateless container - or set docker data-root on ramfs
   true ;
   exit 0
+
+  # === example of start:sh
+(
+set -x &&
+# mkdir /data && mount /dev/sda1 /data
+umount /dev/sda1 &&
+mount -t tmpfs -o size=1024m tmpfs /data &&
+mkdir /data/docker &&
+#cat /etc/resolv.conf &&
+#echo "nameserver 192.168.0.1" > /etc/resolv.conf &&
+apt install -y nano tmux procps kmod iputils-ping less &&
+export PATH="${PATH}:/sbin" &&
+mkdir -p /etc/docker &&
+echo "{\"data-root\": \"/data/docker\"}" > /etc/docker/daemon.json &&
+# docker is frozen because of bad data-root
+# kill it and it'll start at first docker client cli invocation
+kill -9 $(cat /run/docker.pid) ;
+# systemctl start docker &&
+#if [ "$(docker ps | grep -w web | awk '{print $NF}')" != "web" ]
+#then
+#  docker stop -t0 web ;
+#  docker rm web ;
+  docker run -it --rm -d -p 8080:80 --name web nginx &&
+#fi &&
+set +x &&
+exit 0
+) > /tmp/aleph__core__start.log 2>&1
+  # === end of start.sh
+
+
   # Does not work well from SystemD service
   # OPTION 1 - start Desktop environment directly
   # lastly, let the Xfce run
@@ -1219,8 +1363,9 @@ function x__xfce__start()
 # ============================================================================ #
 function print_help()
 {
+  echo "--core__build__pxe_iso     Build the PXE iso." &&
   echo "--core__build__pxe_kernel  Build the core PXE kernel." &&
-  echo "--core__build__squashfs    Build the core PXE squashfs." &&
+  echo "--core__build__squashfs    Build the core squashfs." &&
   echo "--core__build__iso         Build the core .iso." &&
   echo "--core__emulate            Boot the distribution iso inside qemu." &&
   echo "--core__start              Start script once the distribution booted."&&
@@ -1247,6 +1392,7 @@ fi &&
 exit_code=100 &&
 if [ ${1} ]; then
   case "${1}" in
+    --core__build__pxe_iso) core__build__pxe_iso ; exit_code=${?} ;;
     --core__build__pxe_kernel) core__build__pxe_kernel ; exit_code=${?} ;;
     --core__build__squashfs) core__build__squashfs ; exit_code=${?} ;;
     --core__build__iso) core__build__iso ; exit_code=${?} ;;
