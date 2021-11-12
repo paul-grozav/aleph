@@ -78,7 +78,8 @@ mountroot()
   log_success_msg "Overlayfs mounted"
 
   log_begin_msg "Move tmpfs and squashfs to new root"
-  mkdir -p ${overlayfsDir}/{${tmpfsMountPoint},${squashfsMountPoint}}
+  mkdir -p ${overlayfsDir}${tmpfsMountPoint} \
+    ${overlayfsDir}${squashfsMountPoint}
   mount --move ${squashfsMountPoint} ${overlayfsDir}/${squashfsMountPoint} ||
     panic "squashfs move failed"
   mount --move ${tmpfsMountPoint} ${overlayfsDir}/${tmpfsMountPoint} ||
