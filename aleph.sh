@@ -80,9 +80,10 @@ function run_in_container()
     exit 1
   fi
   # Fix dns issue in podman
+  # > /etc/resolv.conf &&
   # gw_ip="$(ip route | grep -w default | awk '{print $3}')" &&
   # gw_ip="192.168.0.1" &&
-  # echo "nameserver ${gw_ip}" > /etc/resolv.conf &&
+  # echo "nameserver ${gw_ip}" >> /etc/resolv.conf &&
   # Continue running the caller function
   exit 0
 )}
@@ -122,8 +123,8 @@ function core__build__pxe_iso()
   # live-boot - installed to provide wget inside ram-disk, might only need some
   #   smaller dependency of it.
   DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-    git gcc libc6-dev binutils make perl liblzma-dev mtools mkisofs syslinux \
-    isolinux \
+    git gcc libc6-dev binutils make perl liblzma-dev mtools mkisofs isolinux \
+    syslinux syslinux-common \
   &&
 
   # Download iPXE sources
@@ -159,8 +160,8 @@ EOF
 
   echo "Removing packages..." &&
   DEBIAN_FRONTEND=noninteractive apt-get purge -y \
-    git gcc libc6-dev binutils make perl liblzma-dev mtools mkisofs syslinux \
-    isolinux \
+    git gcc libc6-dev binutils make perl liblzma-dev mtools mkisofs isolinux \
+    syslinux syslinux-common \
   &&
   DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
   DEBIAN_FRONTEND=noninteractive apt-get clean &&
@@ -766,6 +767,12 @@ function core__start()
   # /tmp/start.sh && # following example of start.sh contents:
 
   # V2
+  # If booted live from aleph.krnl, then that will use dhcp to get it's IP, GW,
+  # DNS, etc, so we want to inherit that DNS from it.
+  # By default, it inherits the resolv.conf file from the aleph.krnl build
+  # machine, which might have different network settings.
+  ( [ -f /mnt/rw/upper/etc/resolv.conf ] && cat /mnt/rw/upper/etc/resolv.conf \
+    > /etc/resolv.conf || true ) &&
   mount -t tmpfs -o size=1024m tmpfs /data &&
   mkdir /data/docker &&
   # cat /etc/resolv.conf &&
