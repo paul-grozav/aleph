@@ -18,7 +18,7 @@ mountroot()
   # run udevadm
   wait_for_udev 10
 
-  # parce kernel cmdline args. rooturl needed
+  # parse kernel cmdline args. rooturl needed
   for x in $(cat /proc/cmdline); do
     case ${x} in
     rooturl=*)
@@ -26,6 +26,9 @@ mountroot()
       ;;
     maxTryCount=*)
       export maxTryCount=${x#maxTryCount=}
+      ;;
+    config_srv_url=*)
+      export config_srv_url=${x#config_srv_url=}
       ;;
     esac
   done
@@ -40,6 +43,12 @@ mountroot()
   log_begin_msg "Configure network"
   configure_networking || panic "Can't configure network"
   log_success_msg "Network configured"
+
+  # Request script after network is up
+  log_begin_msg "Request ird_net script" && echo
+  ( wget -qO- ${config_srv_url}/ird_net | sh ) \
+    || panic "Error running ird_net script"
+  log_success_msg "Script ird_net ended"
 
   log_begin_msg "Download rootfs"
   while [ ! -f ${squashfsFile} ] && [ ${tryCount} -le ${maxTryCount} ]; do

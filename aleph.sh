@@ -377,6 +377,18 @@ function core__build__squashfs__setup()
         # /usr/bin/cgroupfs-mount
         # /usr/bin/dockerd -H unix://
 
+        # configure docker
+        sed -i "s/-H fd:\/\/ //g" /lib/systemd/system/docker.service &&
+
+        mkdir -p /etc/docker &&
+        ( echo "{
+  \"data-root\": \"/data/docker\",
+  \"hosts\": [\"tcp://0.0.0.0:2375\"]
+}" ) > /etc/docker/daemon.json &&
+        #systemctl enable docker &&
+        #systemctl start docker &&
+
+        # export DOCKER_HOST="tcp://127.0.0.1:2375" &&
         # docker run --rm hello-world &&
         # docker image rm hello-world ;
         # return 0 even if docker installation will fail
@@ -407,6 +419,24 @@ EOF2
 
     DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
     DEBIAN_FRONTEND=noninteractive apt-get clean &&
+
+
+
+
+
+
+
+    # !!! TO DO:
+    # 0. define config service
+    # 1. request config from IRD
+    # 2. Register service for config request from IP(given as krnl param)
+    #   After=network-online.service , WantedBy=multi-user.target
+
+
+
+
+
+
     echo "exit chroot - back to container ..." &&
     exit 0
     (
@@ -767,34 +797,31 @@ function core__start()
   # /tmp/start.sh && # following example of start.sh contents:
 
   # V2
-  # If booted live from aleph.krnl, then that will use dhcp to get it's IP, GW,
-  # DNS, etc, so we want to inherit that DNS from it.
-  # By default, it inherits the resolv.conf file from the aleph.krnl build
-  # machine, which might have different network settings.
-  ( [ -f /mnt/rw/upper/etc/resolv.conf ] && cat /mnt/rw/upper/etc/resolv.conf \
-    > /etc/resolv.conf || true ) &&
+(
+  # If booted live from aleph.krnl, then that will use dhcp to get it's IP,
+  # NetMask, GW, DNS(0,1), domain/search, etc, so we want to inherit that DNS
+  # from it.
+  ( . /run/net-*.conf && echo "nameserver ${IPV4DNS0}" > /etc/resolv.conf ) &&
+
   mount -t tmpfs -o size=1024m tmpfs /data &&
   mkdir /data/docker &&
   # cat /etc/resolv.conf &&
   # echo "nameserver 192.168.0.1" > /etc/resolv.conf &&
   apt install -y nano tmux procps kmod iputils-ping less &&
   export PATH="${PATH}:/sbin" &&
-  mkdir -p /etc/docker &&
-  ( echo "{
-  \"data-root\": \"/data/docker\",
-  \"hosts\": [\"tcp://0.0.0.0:2375\"]
-}" ) > /etc/docker/daemon.json &&
   # docker is frozen because of bad data-root
   # kill it and it'll start at first docker client cli invocation
-  kill -9 $(cat /run/docker.pid) ;
-  ( dockerd & ) && sleep 20 &&
+
+#  kill -9 $(cat /run/docker.pid) ;
+#  ( nohup dockerd > /var/log/dockerd.log 2>&1 & ) && sleep 20 &&
+
   # systemctl start docker &&
   #if [ "$(docker ps | grep -w web | awk '{print $NF}')" != "web" ]
   #then
   #  docker stop -t0 web ;
   #  docker rm web ;
-    DOCKER_HOST="tcp://127.0.0.1:2375" docker run -it --rm -d -p 8080:80 \
-      --name web nginx &&
+    export DOCKER_HOST="tcp://127.0.0.1:2375" &&
+    docker run -it --rm -d -p 8080:80 --name web nginx &&
   #fi &&
 
   # mkdir -p /etc/docker /data/docker &&
@@ -803,6 +830,8 @@ function core__start()
   # docker run -it --rm -d -p 8080:80 --name web nginx &&
   # # Start stateless container - or set docker data-root on ramfs
   true ;
+  exit 0
+) > /tmp/aleph__core__start.log 2>&1 ;
   exit 0
 
   # === example of start:sh
