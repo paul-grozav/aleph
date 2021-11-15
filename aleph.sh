@@ -361,14 +361,6 @@ function core__build__squashfs__setup()
         # /usr/bin/cgroupfs-mount
         # /usr/bin/dockerd -H unix://
 
-        # configure docker
-        sed -i "s/-H fd:\/\/ //g" /lib/systemd/system/docker.service &&
-
-        mkdir -p /etc/docker &&
-        ( echo "{
-  \"data-root\": \"/data/docker\",
-  \"hosts\": [\"tcp://0.0.0.0:2375\"]
-}" ) > /etc/docker/daemon.json &&
         #systemctl enable docker &&
         #systemctl start docker &&
 
@@ -376,20 +368,21 @@ function core__build__squashfs__setup()
         # docker run --rm hello-world &&
         # docker image rm hello-world ;
         # return 0 even if docker installation will fail
-        systemctl enable docker ;
+        # systemctl enable docker ;
+        systemctl disable docker ;
 
         # https://itectec.com/superuser/iptables-1-8-2-failed-to-initialize-nft-protocol-not-supported/
         update-alternatives --set iptables /usr/sbin/iptables-legacy &&
-
         exit 0
       ) &&
 
     echo "Install startup service ..." &&
-     # called later at xfce startup
+    # called later at xfce startup
     (
       (cat - <<EOF2
 [Unit]
 Description=Aleph core start service
+After=network-online.service
 
 [Service]
 ExecStart=/root/aleph.sh --core__start
@@ -403,23 +396,6 @@ EOF2
 
     DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
     DEBIAN_FRONTEND=noninteractive apt-get clean &&
-
-
-
-
-
-
-
-    # !!! TO DO:
-    # 0. define config service
-    # 1. request config from IRD
-    # 2. Register service for config request from IP(given as krnl param)
-    #   After=network-online.service , WantedBy=multi-user.target
-
-
-
-
-
 
     echo "exit chroot - back to container ..." &&
     exit 0
@@ -772,6 +748,32 @@ function core__emulate()
 # ============================================================================ #
 function core__start()
 {
+  (
+    echo "Setting network..." &&
+    # If booted live from aleph.krnl, then that will use dhcp to get it's IP,
+    # NetMask, GW, DNS(0,1), domain/search, etc, so we want to inherit that DNS
+    # from it.
+    ( . /run/net-*.conf && echo "nameserver ${IPV4DNS0}" > /etc/resolv.conf ) &&
+
+    echo "Parsing kernel cmdline args to get config_srv_url..." &&
+    for x in $(cat /proc/cmdline); do
+      case ${x} in
+      config_srv_url=*)
+        export config_srv_url=${x#config_srv_url=}
+        ;;
+      esac
+    done
+    echo "Got config_srv_url=${config_srv_url}" &&
+
+    echo "Running boot script ..." &&
+    (
+      curl --location ${config_srv_url}/boot | bash &&
+      echo "Successfully ran the boot script"
+    ) || echo "Error running boot script"
+  ) > /tmp/aleph__core__start.log 2>&1 ;
+  exit 0
+
+
   mkdir -p /data &&
   # V1
   # if [ "$(mount | grep -w /data | wc -l)" == "0" ]; then
