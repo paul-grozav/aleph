@@ -132,23 +132,7 @@ function core__build__pxe_iso()
   git clone git://git.ipxe.org/ipxe.git &&
   cd ipxe/src/ &&
 
-  ( cat - <<EOF > ./my_script.ipxe
-#!ipxe
-# ============================================================================ #
-# Author: Tancredi-Paul Grozav <paul@grozav.info>
-# ============================================================================ #
-echo Performing DHCP on first network interface
-# dhcp net0
-# should auto detect network card ?
-dhcp
-
-# Continue booting from HTTP server
-chain http://alice.home.server.paul.grozav.info:1027/
-# chain http://192.168.0.2:1027/
-# chain http://boot.ipxe.org/demo/boot.php
-# ============================================================================ #
-EOF
-  ) &&
+  cp ${project_root}/fs/core/pxe_script.ipxe ./my_script.ipxe &&
 
   # Build:
   # 1. ./bin/undionly.kpxe - and make DHCP point to the kpxe file served by TFTP
