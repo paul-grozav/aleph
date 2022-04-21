@@ -6,7 +6,7 @@ set -x && # Start debugging
 #project_root="$(git rev-parse --show-toplevel)" &&
 project_root="$(cd $(dirname $0) ; pwd)" &&
 project_name="aleph" &&
-version="0.2.0" &&
+version="0.2.1" &&
 debian_base_image="$(cat ${project_root}/.gitlab-ci.yml | grep ^image |
   head -n 1 | awk '{print $2}')" &&
 
