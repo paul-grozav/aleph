@@ -55,7 +55,7 @@ pages:
     - core__build__squashfs
     - core__build__iso
   script:
-    - mv distribution_content public/distribution_content
+    - ./aleph.sh --core__publish
   artifacts:
     paths:
       - public/

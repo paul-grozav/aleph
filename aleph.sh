@@ -2,11 +2,20 @@
 # ============================================================================ #
 # Author: Tancredi-Paul Grozav <paul@grozav.info>
 # ============================================================================ #
-set -x && # Start debugging
+
+# ============================================================================ #
+# Global variables
+# ============================================================================ #
+should_debug=1 &&
+# Uncomment to disable debugging
+#should_debug=0 &&
+# Start debugging
+[ ${should_debug} -eq 1 ] && set -x || true &&
+
 #project_root="$(git rev-parse --show-toplevel)" &&
 project_root="$(cd $(dirname $0) ; pwd)" &&
-project_name="aleph" &&
-version="0.2.1" &&
+project_name="$(basename ${project_root})" &&
+version="$(cat ${project_root}/version.txt)" &&
 debian_base_image="$(cat ${project_root}/.gitlab-ci.yml | grep ^image |
   head -n 1 | awk '{print $2}')" &&
 
@@ -39,11 +48,14 @@ fi &&
 if [ ! -d ${distro_dir} ] ; then
   mkdir -p ${distro_dir}
 fi &&
+# ============================================================================ #
 
 
 
 
 # ============================================================================ #
+# ============================================================================ #
+# Private methods
 # ============================================================================ #
 # ============================================================================ #
 # Utils
@@ -86,15 +98,20 @@ function run_in_container()
   # echo "nameserver ${gw_ip}" >> /etc/resolv.conf &&
   # Continue running the caller function
   exit 0
-)}
+)} &&
 # ============================================================================ #
 # ============================================================================ #
 # ============================================================================ #
+# ============================================================================ #
 
 
 
 
 
+# ============================================================================ #
+# ============================================================================ #
+# Public methods
+# ============================================================================ #
 # ============================================================================ #
 # Build the undionly.kpxe kernel to have DHCP serve the iPXE kernel directly
 # from the TFTP server.
@@ -151,7 +168,7 @@ function core__build__pxe_iso()
   DEBIAN_FRONTEND=noninteractive apt-get clean &&
 
   exit 0
-)}
+)} &&
 
 
 
@@ -228,7 +245,7 @@ function core__build__pxe_kernel()
   DEBIAN_FRONTEND=noninteractive apt-get clean &&
 
   exit 0
-)}
+)} &&
 
 
 
@@ -300,7 +317,7 @@ function core__build__squashfs()
   DEBIAN_FRONTEND=noninteractive apt-get clean &&
 
   exit 0
-)}
+)} &&
 
 
 
@@ -530,7 +547,7 @@ EOF2
 
     set +x && # Stop debugging
     exit 0
-)}
+)} &&
 
 
 
@@ -708,7 +725,7 @@ function core__build__iso()
 #}
 
   exit 0
-)}
+)} &&
 
 
 
@@ -737,7 +754,7 @@ function core__emulate()
     -display gtk,zoom-to-fit=on \
     & ) &&
   exit 0
-}
+} &&
 
 
 
@@ -1004,8 +1021,25 @@ EOF
     x__start # Call from this script
   fi
 #  exit 0
-}
+} &&
 
+
+
+
+
+# ============================================================================ #
+# Publish core boot files.
+# ============================================================================ #
+function core__publish()
+{
+  # The distribution_content folder is created in previous pipeline stages/jobs.
+  mv distribution_content public/distribution_content &&
+  # Put version in index.html
+  sed -i s/__ALEPH_VERSION__/${version}/g ${project_root}/public/index.html &&
+  # Copy latest version to public folder
+  cp ${project_root}/version.txt ${project_root}/public/version.txt &&
+  true
+} &&
 
 
 
@@ -1123,7 +1157,7 @@ function x__build()
   ) &&
 
   exit 0
-}
+} &&
 
 
 
@@ -1298,7 +1332,7 @@ EOF
       --command startxfce4
     )
   fi
-}
+} &&
 
 
 
@@ -1320,7 +1354,7 @@ function x__xfce__panel__ram()
       print "R:" ceil(100*$3/$2) "%"
     }
     '
-}
+} &&
 
 
 
@@ -1374,7 +1408,7 @@ function x__xfce__start()
 
   # keep the terminal open for future commands
   bash
-}
+} &&
 
 
 
@@ -1391,12 +1425,18 @@ function print_help()
   echo "--core__build__iso         Build the core .iso." &&
   echo "--core__emulate            Boot the distribution iso inside qemu." &&
   echo "--core__start              Start script once the distribution booted."&&
+  echo "--core__publish            Publish core boot files."&&
   echo "--x__build                 Build the aleph container." &&
   echo "--x__start                 Start the aleph container." &&
   echo "--x__xfce__panel__ram      Show ram usage in XFCE4 panel." &&
   echo "--x__xfce__start           Script that runs when XFCE4 starts." &&
   echo "--help                     Print the help message."
-}
+} &&
+
+# ============================================================================ #
+# ============================================================================ #
+# ============================================================================ #
+# ============================================================================ #
 
 
 
@@ -1411,26 +1451,38 @@ if [ ${#} == 0 ]; then
 fi &&
 
 # Case
-exit_code=100 &&
-if [ ${1} ]; then
-  case "${1}" in
-    --core__build__pxe_iso) core__build__pxe_iso ; exit_code=${?} ;;
-    --core__build__pxe_kernel) core__build__pxe_kernel ; exit_code=${?} ;;
-    --core__build__squashfs) core__build__squashfs ; exit_code=${?} ;;
-    --core__build__iso) core__build__iso ; exit_code=${?} ;;
-    --core__emulate) core__emulate ; exit_code=${?} ;;
-    --core__start) core__start ; exit_code=${?} ;;
-    --x__build) x__build ; exit_code=${?} ;;
-    --x__start) x__start ; exit_code=${?} ;;
-    --x__xfce__panel__ram) x__xfce__panel__ram ; exit_code=${?} ;;
-    --x__xfce__start) x__xfce__start ; exit_code=${?} ;;
-    --help) print_help ; exit_code=${?} ;;
-    *) print_help ; exit_code=${?} ;;
+first_param="${1}" &&
+shift &&
+exit_code=0 &&
+if [ ${first_param} ]; then
+  case "${first_param}" in
+    --core__build__pxe_iso) ${first_param#--} ${@} ; exit_code=${?} ;;
+    --core__build__pxe_kernel) ${first_param#--} ${@} ; exit_code=${?} ;;
+    --core__build__squashfs) ${first_param#--} ${@} ; exit_code=${?} ;;
+    --core__build__iso) ${first_param#--} ${@} ; exit_code=${?} ;;
+    --core__emulate) ${first_param#--} ${@} ; exit_code=${?} ;;
+    --core__start) ${first_param#--} ${@} ; exit_code=${?} ;;
+    --core__publish) ${first_param#--} ${@} ; exit_code=${?} ;;
+    --x__build) ${first_param#--} ${@} ; exit_code=${?} ;;
+    --x__start) ${first_param#--} ${@} ; exit_code=${?} ;;
+    --x__xfce__panel__ram) ${first_param#--} ${@} ; exit_code=${?} ;;
+    --x__xfce__start) ${first_param#--} ${@} ; exit_code=${?} ;;
+    *) print_help ${@} ; exit_code=${?} ;;
     esac
-fi
-set +x && # Stop debugging
+fi &&
+
+# Stop debugging
+[ ${should_debug} -eq 1 ] && set +x || true &&
+
 exit ${exit_code}
 # ============================================================================ #
+
+
+
+
+
+
+
 
 
 
