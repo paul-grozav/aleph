@@ -2,7 +2,7 @@
 # Author: Tancredi-Paul Grozav <paul@grozav.info>
 # ============================================================================ #
 # image version should match debian_base_image from aleph.sh
-image: debian:11.0
+image: debian:11.5
 # ============================================================================ #
 core__build__pxe_kernel:
   stage: build
