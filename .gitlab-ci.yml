@@ -7,7 +7,7 @@ image: debian:11.6
 core__build__pxe_kernel:
   stage: build
   tags:
-    - docker
+    - container
     - linux
   script:
     - ./aleph.sh --core__build__pxe_kernel
@@ -20,7 +20,7 @@ core__build__pxe_kernel:
 core__build__squashfs:
   stage: build
   tags:
-    - docker
+    - container
     - linux
   script:
     - ./aleph.sh --core__build__squashfs
@@ -37,7 +37,7 @@ core__build__squashfs:
 core__build__iso:
   stage: build
   tags:
-    - docker
+    - container
     - linux
   needs:
     - core__build__squashfs
