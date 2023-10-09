@@ -1,7 +1,7 @@
 # ============================================================================ #
 # Author: Tancredi-Paul Grozav <paul@grozav.info>
 # ============================================================================ #
-# image version should match debian_base_image from aleph.sh
+# This is the only place where the base image version is defined.Then read in sh
 image: debian:12.1
 # ============================================================================ #
 core__build__pxe_kernel:
