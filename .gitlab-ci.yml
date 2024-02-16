@@ -2,7 +2,7 @@
 # Author: Tancredi-Paul Grozav <paul@grozav.info>
 # ============================================================================ #
 # This is the only place where the base image version is defined.Then read in sh
-image: debian:12.1
+image: debian:12.5
 # ============================================================================ #
 core__build__pxe_kernel:
   stage: build
