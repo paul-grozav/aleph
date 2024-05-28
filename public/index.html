@@ -1,7 +1,50 @@
-Aleph GNU/Linux distribution version <a href="version.txt">__ALEPH_VERSION__</a> :
+Aleph GNU/Linux distribution version <a href="version.txt">__ALEPH_VERSION__</a>
+:
 <ol>
   <li><a href="distribution_content/aleph.krnl">kernel</a></li>
   <li><a href="distribution_content/aleph.ird">init ram disk</a></li>
   <li><a href="distribution_content/aleph.sfs">squash file system</a></li>
   <li><a href="distribution_content/aleph.iso">live ISO</a></li>
 </ol>
+
+<hr/>
+
+Aleph GNU/Linux is a <a href="https://www.debian.org/" target="_blank">Debian
+</a> based distribution, inspired from the container analogy, aiming to reduce
+the time needed to make a hardware usable, by removing the need to install an
+Operating System, to configure it, or even deploy software to it. Aleph brings
+up your system, with pre-installed and pre-configured software that runs in a
+volatile environment(RAM) - persistent storage(HDD) is not even needed.
+
+<hr/>
+
+Boot the OS, using
+<a href="https://wiki.syslinux.org/wiki/index.php?title=PXELINUX"
+  target="_blank">PXELINUX</a>:
+<pre>
+label aleph
+  kernel http://192.168.10.2/aleph.krnl
+  append initrd=http://192.168.10.2/aleph.ird ip=:::::enp0s8:dhcp console=ttyS0 console=tty0 boot=pxe maxTryCount=10 config_srv_url=http://192.168.10.2/aleph_config rooturl=http://192.168.10.2/aleph.sfs
+</pre>
+
+The kernel(<8MiB) and the "init ram disk"(IRD)(<45MiB) is loaded. IRD brings up
+the network - see kernel `ip` parameter for network configuration. Then IRD
+loads the URL: ${config_srv_url}/ird_net as a script responsible for downloading
+and mounting the "actual" file system, which is a "squash file system" (SFS) of
+varying sizes. Once this is mounted, PID 1 is started from /sbin/init . Once the
+system booted from our SFS, a subsequent script is loaded from URL:
+${config_srv_url}/boot which is responsible for further configuring the system,
+on top of what the SFS provides.
+
+<hr/>
+
+If you like containers, you can think of the machine/node as being the
+container, and the SFS as being the "container image" that comes with an
+(actual) operating system environment, configuration, libraries/dependencies and
+the software/server that you want to run. The "boot" URL/script is the
+equivalent of an entrypoint to make small tweaks to the system. You can also
+create new SFS images/files by expanding them, or starting from scratch.
+
+<hr/>
+
+Author: Tancredi-Paul Grozav - paul@grozav.info

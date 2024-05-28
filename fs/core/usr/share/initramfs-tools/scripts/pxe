@@ -4,6 +4,7 @@
 # ============================================================================ #
 mountroot()
 {
+  set +x &&
   # run udevadm
   wait_for_udev 10
 
@@ -24,10 +25,15 @@ mountroot()
   log_begin_msg "Request ird_net script" && echo
   (
     wget -O /tmp/script.sh ${config_srv_url}/ird_net &&
+    # This is supposed to wget a squashfs and mount it
     source /tmp/script.sh &&
     rm -f /tmp/script.sh
   ) || panic "Error running ird_net script"
   log_success_msg "Script ird_net ended"
+  set -x &&
+  true
 }
 # ============================================================================ #
-
+# afterwards, once the squash file system (new root) is mounted, it will start:
+# exec switch_root /root/mnt/ro /sbin/init
+# ============================================================================ #

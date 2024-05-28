@@ -215,6 +215,8 @@ function core__build__pxe_kernel()
     ${project_root}/fs/core/etc/initramfs-tools/modules \
     /etc/initramfs-tools/modules &&
 
+  # This script will wget ird_net, which decides which squashfs to pull, to
+  # start the full OS environment.
   echo "Setting PXE script ..." &&
   cp \
     ${project_root}/fs/core/usr/share/initramfs-tools/scripts/pxe \
