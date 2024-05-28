@@ -29,12 +29,12 @@ label aleph
 
 The kernel(<8MiB) and the "init ram disk"(IRD)(<45MiB) is loaded. IRD brings up
 the network - see kernel `ip` parameter for network configuration. Then IRD
-loads the URL: ${config_srv_url}/ird_net as a script responsible for downloading
-and mounting the "actual" file system, which is a "squash file system" (SFS) of
-varying sizes. Once this is mounted, PID 1 is started from /sbin/init . Once the
-system booted from our SFS, a subsequent script is loaded from URL:
-${config_srv_url}/boot which is responsible for further configuring the system,
-on top of what the SFS provides.
+loads the URL: <a href="./ird_net" target="_blank">${config_srv_url}/ird_net</a>
+as a script responsible for downloading and mounting the "actual" file system,
+which is a "squash file system" (SFS) of varying sizes. Once this is mounted,
+PID 1 is started from /sbin/init . Once the system booted from our SFS, a
+subsequent script is loaded from URL: ${config_srv_url}/boot which is
+responsible for further configuring the system, on top of what the SFS provides.
 
 <hr/>
 
