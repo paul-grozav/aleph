@@ -348,7 +348,11 @@ function core__build__squashfs__setup()
     # systemd-sysv is required as it is the init system that will be started by
     # the kernel
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      systemd-sysv &&
+      ` # Linux kernel and modules need to be inside the squashfs too. ` \
+      linux-image-amd64 \
+      ` # SystemD is started as PID=1 in the new system/container/jail. ` \
+      systemd-sysv \
+      &&
 
       (
         echo "Installing docker ..." &&
