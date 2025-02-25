@@ -1,0 +1,83 @@
+# ============================================================================ #
+# Author: Tancredi-Paul Grozav <paul@grozav.info>
+# ============================================================================ #
+# This is a /bin/sh script that is sourced.
+# ============================================================================ #
+maxTryCount=5
+squashfsFile="/tmp/rootfs.squashfs"
+squashfsMountPoint="/mnt/ro"
+tmpfsMountPoint="/mnt/rw"
+overlayfsUppderDir="${tmpfsMountPoint}/upper"
+overlayfsWorkDir="${tmpfsMountPoint}/work"
+overlayfsDir="/mnt/overlayfs"
+overlayfsDir="/sysroot"
+rootmnt="/"
+tryCount="1"
+
+set -x
+modprobe squashfs
+modprobe overlay
+
+# parse kernel cmdline args.
+for x in $(cat /proc/cmdline); do
+  case ${x} in
+  rooturl=*)
+    export rooturl=${x#rooturl=}
+    ;;
+  maxTryCount=*)
+    export maxTryCount=${x#maxTryCount=}
+    ;;
+  esac
+done
+
+while [ ! -f ${squashfsFile} ] && [ ${tryCount} -le ${maxTryCount} ]; do
+  wget ${rooturl} -O ${squashfsFile}
+  tryCount=$(( ${tryCount} + 1 ))
+  sleep 0.5
+done
+# if [ -f ${squashfsFile} ]
+# then
+#   log_success_msg "Rootfs downloaded"
+# else
+#   panic "Can't download rootfs"
+# fi
+
+mkdir -p ${squashfsMountPoint}
+mount -t squashfs -o loop ${squashfsFile} ${squashfsMountPoint}
+
+mkdir -p ${tmpfsMountPoint}
+mount -t tmpfs -o size=1736m none ${tmpfsMountPoint}
+
+mkdir -p ${overlayfsUppderDir} ${overlayfsWorkDir} ${overlayfsDir}
+mount -t overlay overlay -o\
+ lowerdir=${squashfsMountPoint}\
+,upperdir=${overlayfsUppderDir}\
+,workdir=${overlayfsWorkDir}\
+ ${overlayfsDir} \
+
+# log_begin_msg "Move tmpfs and squashfs to new root"
+# mkdir -p ${overlayfsDir}${tmpfsMountPoint} \
+#   ${overlayfsDir}${squashfsMountPoint}
+# mount --make-private ${squashfsMountPoint} || panic "mount make-private failed"
+# mount --move ${squashfsMountPoint} ${overlayfsDir}/${squashfsMountPoint} ||
+#   panic "squashfs move failed"
+# mount --move ${tmpfsMountPoint} ${overlayfsDir}/${tmpfsMountPoint} ||
+#   panic "tmpfs move failed"
+# log_success_msg "Tmpfs and squashfs moved"
+
+# log_begin_msg "Move overlayfs to new root"
+# mount --move ${overlayfsDir} ${rootmnt}  || panic ""
+
+# mkdir -p ${overlayfsDir}/mnt
+# mkdir -p ${overlayfsDir}/mnt/old_root
+# cd ${overlayfsDir}
+# pivot_root . mnt/old_root
+# switch_root ${overlayfsDir} /sbin/init
+# systemctl start initrd-switch-root.service
+# mount --make-rprivate /
+# umount -l /mnt/old_root
+
+# exit 0
+
+# start systemd (PID=1) in the new root fs, example: /root/mnt/ro/sbin/init
+# ============================================================================ #
