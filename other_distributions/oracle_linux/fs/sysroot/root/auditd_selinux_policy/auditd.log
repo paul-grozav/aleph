@@ -1,0 +1,26 @@
+# ============================================================================ #
+# Author(s):
+# - Tancredi-Paul Grozav <paul@grozav.info>
+# ============================================================================ #
+# These errors are extracted from auditd.log , and we want to configure SELinux
+# to allow them.
+#
+# Don't forget to run the script, after changing this file, to generate the new
+# Type Enforcement file which will be deployed as a PP inside SELinux.
+# ============================================================================ #
+# > tail -f /var/log/audit/audit.log | grep -w "deny\|denied"
+# > tail -f /var/log/audit/audit.log | grep -w "deny\|denied" | ausearch -i
+# > ausearch -m avc -ts recent # Recent events
+#
+# If systemctl status auditd says: Audit daemon is suspending logging due to no
+# space left on logging partition.
+# Then you should clean up logs, remove older, keep first 100 files.
+# > ls -lat /var/log/audit/audit.log.* | awk -F. '{if( $NF > 100 ){print $0}}' |
+#   awk '{print "rm -f "$9}' | bash
+# Then resume logging by sending it SIGUSR2:
+# > kill -SIGUSR2 $(systemctl status auditd | grep Main\ PID | awk '{print $3}')
+# ============================================================================ #
+# audit: type=1400 audit(1740557500.043:5): avc:  denied  { transition } for  pid=849 comm="(systemd)" path="/usr/lib/systemd/systemd" dev="overlay" ino=15657 scontext=system_u:system_r:kernel_t:s0 tcontext=unconfined_u:unconfined_r:unconfined_t:s0 tclass=process permissive=0
+# audit: type=1400 audit(1740558935.689:4): avc:  denied  { entrypoint } for  pid=833 comm="(systemd)" path="/usr/lib/systemd/systemd" dev="overlay" ino=15657 scontext=unconfined_u:unconfined_r:unconfined_t:s0 tcontext=system_u:object_r:unlabeled_t:s0 tclass=file permissive=0
+# audit: type=1400 audit(1740557500.067:6): avc:  denied  { transition } for  pid=852 comm="login" path="/usr/bin/bash" dev="overlay" ino=1136 scontext=system_u:system_r:kernel_t:s0 tcontext=unconfined_u:unconfined_r:unconfined_t:s0 tclass=process permissive=0
+# ============================================================================ #

@@ -1,23 +1,44 @@
+#!/bin/bash
+# ============================================================================ #
+# Author: Tancredi-Paul Grozav <paul@grozav.info>
+# ============================================================================ #
 # ⚠️ 
-# sudo podman run -it --rm --name aleph_oracle -v $(pwd):/mnt:rw oraclelinux:9 /bin/bash
+# sudo podman run -it --rm --name aleph_oracle -v $(pwd):/mnt:rw oraclelinux:9
+# ============================================================================ #
 
 (
-exit 0 &&
+#exit 0 &&
 os_root=/mnt/os_root &&
 rm -rf ${os_root} &&
 mkdir -p ${os_root} &&
 dnf install --installroot=${os_root}/ --releasever=9 -y @core &&
+dnf install --installroot=${os_root}/ --releasever=9 -y \
+  policycoreutils-python-utils \
+  nano \
+  &&
 cp /etc/resolv.conf ${os_root}/etc/resolv.conf &&
 mkdir -p ${os_root}/etc/yum.repos.d &&
 yes | cp -r /etc/yum.repos.d/* ${os_root}/etc/yum.repos.d/ &&
 echo -e "aleph\naleph" | chroot ${os_root} passwd &&
-chroot ${os_root} useradd admin &&
-echo -e "aleph\naleph" | chroot ${os_root} passwd admin &&
-chroot ${os_root} usermod -aG wheel admin &&
+# chroot ${os_root} useradd admin &&
+# echo -e "aleph\naleph" | chroot ${os_root} passwd admin &&
+# chroot ${os_root} usermod -aG wheel admin &&
+# /etc/autid/auditd.conf log_file=/dev/kmsg
+#chroot ${os_root} /sbin/fixfiles -T 0 restore &&
+cp /mnt/fs/sysroot/root/auditd_selinux_policy/aleph_policy.te \
+  ${os_root}/root/aleph_policy.te &&
+chroot ${os_root} checkmodule -M -m -o /root/aleph_policy.mod \
+  /root/aleph_policy.te &&
+chroot ${os_root} semodule_package -o /root/aleph_policy.pp \
+  -m /root/aleph_policy.mod &&
+chroot ${os_root} semodule -i /root/aleph_policy.pp &&
+chroot ${os_root} rm -rf /root/aleph_policy.{pp,mod,te} &&
+
+dnf install -y squashfs-tools &&
 mksquashfs ${os_root} /mnt/target.squashfs &&
 true
 ) &&
-
+# ============================================================================ #
 # Regenerate initramfs:
 (
 exit 0
@@ -51,9 +72,11 @@ yes | cp /boot/initramfs-${kernel_version}.img \
 true
 ) &&
 
+# ============================================================================ #
 # Obtain kernel:
 # dnf download kernel-uek-${kernel_version}
 # rpm2cpio kernel-uek-${kernel_version}.x86_64.rpm | cpio -idmv
 # ls -la /lib/modules/5.15.0-204.147.6.2.el9uek.x86_64/vmlinuz
 
 true
+# ============================================================================ #

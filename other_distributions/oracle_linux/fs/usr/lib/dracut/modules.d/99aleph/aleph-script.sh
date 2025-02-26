@@ -20,7 +20,7 @@ done
 
 echo "Request ird_net script" > /dev/kmsg && echo
 (
-  wget -O /tmp/script.sh ${config_srv_url}/ird_net &&
+  wget -O /tmp/script.sh ${config_srv_url}ird_net &&
   # This is supposed to wget a squashfs and mount it
   source /tmp/script.sh &&
   rm -f /tmp/script.sh
