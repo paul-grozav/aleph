@@ -54,6 +54,36 @@ jobs:
         set -x &&
         ./aleph.sh --core__build__squashfs &&
         true
+    - name: iso
+      run: |
+        set -x &&
+        ./aleph.sh --core__build__iso &&
+        true
+    - name: publish
+      run: |
+        set -x &&
+        ./aleph.sh --core__publish &&
+        mv
+        true
+    - name: Setup Pages
+      uses: actions/configure-pages@v5
+    - name: Upload static files as artifact
+      id: deployment
+      uses: actions/upload-pages-artifact@v4
+      with:
+        path: public
+        retention-days: 1
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    # Uses a free GitHub runner
+    runs-on: ubuntu-latest
+    needs: core__build
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
 # ============================================================================ #
 
 
