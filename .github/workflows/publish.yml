@@ -28,6 +28,7 @@ jobs:
     - name: Install tools
       run: |
         set -x &&
+        apt-get update &&
         apt-get install -y \
           ` # tar - to create the artifact ` \
           tar \
