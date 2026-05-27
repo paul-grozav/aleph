@@ -17,7 +17,7 @@ env:
   LC_ALL: C.UTF-8
 jobs:
   # Build job
-  core__build__pxe_kernel:
+  core__build:
     # Uses a free GitHub runner
     runs-on: ubuntu-latest
     container:
@@ -28,6 +28,7 @@ jobs:
     - name: Install tools
       run: |
         set -x &&
+        export DEBIAN_FRONTEND=noninteractive &&
         apt-get update &&
         apt-get install -y \
           ` # tar - to create the artifact ` \
@@ -43,10 +44,15 @@ jobs:
     # Add this step to fix the "dubious ownership" error
     - name: Trust Workspace
       run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-    - name: Step named core__build__pxe_kernel
+    - name: pxe_kernel
       run: |
         set -x &&
-        ./aleph.sh --core__build__pxe_kernel  &&
+        ./aleph.sh --core__build__pxe_kernel &&
+        true
+    - name: squashfs
+      run: |
+        set -x &&
+        ./aleph.sh --core__build__squashfs &&
         true
 # ============================================================================ #
 
