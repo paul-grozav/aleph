@@ -28,7 +28,7 @@ jobs:
     - name: Install tools
       run: |
         set -x &&
-        apk add --no-cache \
+        apt-get install -y \
           ` # tar - to create the artifact ` \
           tar \
           ` # To check changes in prev commit(s) ` \
