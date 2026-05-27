@@ -25,6 +25,23 @@ jobs:
     steps:
     # Must install git before checkout, otherwise .git folder is missing and
     # will just use REST API (download .zip of repo)
+    - name: Install tools
+      run: |
+        set -x &&
+        apk add --no-cache \
+          ` # tar - to create the artifact ` \
+          tar \
+          ` # To check changes in prev commit(s) ` \
+          git \
+          &&
+        true
+    - name: Checkout
+      uses: actions/checkout@v4
+      # with:
+      #   fetch-depth: 1
+    # Add this step to fix the "dubious ownership" error
+    - name: Trust Workspace
+      run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
     - name: Step named core__build__pxe_kernel
       run: |
         set -x &&
