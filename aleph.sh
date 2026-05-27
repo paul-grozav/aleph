@@ -20,8 +20,9 @@ debian_base_image="$(cat ${project_root}/.gitlab-ci.yml | grep ^image |
   head -n 1 | awk '{print $2}')" &&
 
 # docker:
-container_marker=/.dockerenv && ls -l ${container_marker} &&
-container_marker=/run/.containerenv && ls -l ${container_marker} &&
+container_marker=/.dockerenv &&
+# ls -l ${container_marker} &&
+# container_marker=/run/.containerenv && ls -l ${container_marker} &&
 # podman (requires to be ran as root):
 if [ -z ${is_podman_available+x} ]
 then
