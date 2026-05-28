@@ -490,7 +490,7 @@ EOF2
         echo "Installing docker ..." &&
         # install packages to allow apt to use a repository over HTTPS
         DEBIAN_FRONTEND=noninteractive apt-get \
-          install -y --no-install-\
+          install -y --no-install-recommends \
           apt-transport-https ca-certificates curl gnupg-agent \
           software-properties-common &&
         # Add Docker's official GPG key
