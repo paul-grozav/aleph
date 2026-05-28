@@ -422,8 +422,8 @@ EOF2
     DEBIAN_FRONTEND=noninteractive apt-get -y autoremove &&
     DEBIAN_FRONTEND=noninteractive apt-get clean &&
 
-    echo "exit chroot - back to container ..." &&
-    exit 0
+    # echo "exit chroot - back to container ..." &&
+    # exit 0
     (
       packages="" &&
       # See contents of package:
