@@ -339,6 +339,8 @@ function core__build__squashfs__setup()
 
     echo "Setting hostname ..." &&
     echo "aleph" > /etc/hostname &&
+    echo "Making hostname resolvable ..." &&
+    echo "127.0.0.1       aleph" >> /etc/hosts &&
 
     echo "Setting root's password to aleph ..." &&
     echo root:aleph | chpasswd &&
@@ -526,7 +528,7 @@ Signed-By: /etc/apt/keyrings/docker.asc
 EOF
         ) &&
         sudo apt-get update &&
-        sudo apt-get install -y \
+        sudo apt-get install -y --no-install-recommends \
           docker-ce \
           docker-ce-cli \
           containerd.io \
@@ -552,10 +554,11 @@ EOF
       echo "Installing K8s ..." &&
       (
         KUBERNETES_VERSION=1.35 &&
+        export DEBIAN_FRONTEND=noninteractive &&
         apt-get update &&
         # apt-transport-https may be a dummy package; if so, you can skip that
         # package
-        apt-get install -y \
+        apt-get install -y --no-install-recommends \
           apt-transport-https \
           ca-certificates \
           curl \
@@ -570,9 +573,13 @@ deb/Release.key |
           "https://pkgs.k8s.io/core:/stable:/v${KUBERNETES_VERSION}/deb/ /" |
           sudo tee /etc/apt/sources.list.d/kubernetes.list &&
         sudo apt-get update &&
-        sudo apt-get install -y kubelet kubeadm kubectl &&
+        sudo apt-get install -y --no-install-recommends \
+          kubelet \
+          kubeadm \
+          kubectl \
+          &&
         sudo apt-mark hold kubelet kubeadm kubectl &&
-        sudo systemctl enable --now kubelet &&
+        sudo systemctl enable kubelet &&
         exit 0
       ) &&
       echo &&
