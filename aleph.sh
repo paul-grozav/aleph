@@ -356,48 +356,48 @@ function core__build__squashfs__setup()
       &&
 
       (
-        echo "Installing docker ..." &&
-        # might also require: fuse-overlayfs
-        # install packages to allow apt to use a repository over HTTPS
-        DEBIAN_FRONTEND=noninteractive apt-get \
-          install -y --no-install-recommends \
-          apt-transport-https ca-certificates curl gnupg-agent gnupg2 \
-          software-properties-common &&
-        # Add Docker's official GPG key
-        curl -fsSL https://download.docker.com/linux/debian/gpg |
-          apt-key add - &&
-        # set up the stable docker repository
-        add-apt-repository \
-          "deb [arch=amd64] https://download.docker.com/linux/debian \
-          $(lsb_release -cs) \
-          stable" &&
-        # Get list of docker packages from repository
-        DEBIAN_FRONTEND=noninteractive apt-get update &&
-        # Install docker daemon and client
-        DEBIAN_FRONTEND=noninteractive apt-get \
-          install -y --no-install-recommends \
-          docker-ce docker-ce-cli containerd.io &&
-        # Docker install will fail at pkg: aufs-dkms
-        # docker-compose ???
+        # echo "Installing docker ..." &&
+        # # might also require: fuse-overlayfs
+        # # install packages to allow apt to use a repository over HTTPS
+        # DEBIAN_FRONTEND=noninteractive apt-get \
+        #   install -y --no-install-recommends \
+        #   apt-transport-https ca-certificates curl gnupg-agent gnupg2 \
+        #   software-properties-common &&
+        # # Add Docker's official GPG key
+        # curl -fsSL https://download.docker.com/linux/debian/gpg |
+        #   apt-key add - &&
+        # # set up the stable docker repository
+        # add-apt-repository \
+        #   "deb [arch=amd64] https://download.docker.com/linux/debian \
+        #   $(lsb_release -cs) \
+        #   stable" &&
+        # # Get list of docker packages from repository
+        # DEBIAN_FRONTEND=noninteractive apt-get update &&
+        # # Install docker daemon and client
+        # DEBIAN_FRONTEND=noninteractive apt-get \
+        #   install -y --no-install-recommends \
+        #   docker-ce docker-ce-cli containerd.io &&
+        # # Docker install will fail at pkg: aufs-dkms
+        # # docker-compose ???
 
-        # Trying to start docker in chroot inside container
-        # mount -o bind /proc /distribution_content/chroot/proc/
-        # mount -o bind /sys /distribution_content/chroot/sys/
-        # /usr/bin/cgroupfs-mount
-        # /usr/bin/dockerd -H unix://
+        # # Trying to start docker in chroot inside container
+        # # mount -o bind /proc /distribution_content/chroot/proc/
+        # # mount -o bind /sys /distribution_content/chroot/sys/
+        # # /usr/bin/cgroupfs-mount
+        # # /usr/bin/dockerd -H unix://
 
-        #systemctl enable docker &&
-        #systemctl start docker &&
+        # #systemctl enable docker &&
+        # #systemctl start docker &&
 
-        # export DOCKER_HOST="tcp://127.0.0.1:2375" &&
-        # docker run --rm hello-world &&
-        # docker image rm hello-world ;
-        # return 0 even if docker installation will fail
-        # systemctl enable docker ;
-        systemctl disable docker ;
+        # # export DOCKER_HOST="tcp://127.0.0.1:2375" &&
+        # # docker run --rm hello-world &&
+        # # docker image rm hello-world ;
+        # # return 0 even if docker installation will fail
+        # # systemctl enable docker ;
+        # systemctl disable docker ;
 
-        # https://itectec.com/superuser/iptables-1-8-2-failed-to-initialize-nft-protocol-not-supported/
-        update-alternatives --set iptables /usr/sbin/iptables-legacy &&
+        # # https://itectec.com/superuser/iptables-1-8-2-failed-to-initialize-nft-protocol-not-supported/
+        # update-alternatives --set iptables /usr/sbin/iptables-legacy &&
         exit 0
       ) &&
 
@@ -472,6 +472,7 @@ EOF2
       packages="${packages} tmux" && # tmux
       packages="${packages} nano" && # nano
       packages="${packages} less" && # less
+      packages="${packages} sudo" && # switch user and do (run cmd)
 
       # noninteractive set because packet keyboard-configuration asks for layout
       DEBIAN_FRONTEND=noninteractive \
@@ -484,9 +485,9 @@ EOF2
 
     echo "Installing additional software ..." &&
     (
-      #exit 0 &&
       echo &&
       (
+        exit 0 &&
         echo "Installing docker ..." &&
         # install packages to allow apt to use a repository over HTTPS
         # DEBIAN_FRONTEND=noninteractive apt-get \
@@ -508,8 +509,7 @@ EOF2
         # Docker install will fail at pkg: aufs-dkms
 
         # Add Docker's official GPG key:
-        sudo apt update &&
-        sudo apt install -y ca-certificates curl &&
+        sudo apt-get install -y ca-certificates curl &&
         sudo install -m 0755 -d /etc/apt/keyrings &&
         sudo curl -fsSL https://download.docker.com/linux/debian/gpg \
           -o /etc/apt/keyrings/docker.asc &&
@@ -525,7 +525,14 @@ Architectures: $(dpkg --print-architecture)
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
         ) &&
-        sudo apt update &&
+        sudo apt-get update &&
+        sudo apt-get install -y \
+          docker-ce \
+          docker-ce-cli \
+          containerd.io \
+          docker-buildx-plugin \
+          docker-compose-plugin \
+          &&
 
 
         # docker-compose ???
@@ -540,6 +547,32 @@ EOF
         ( docker image rm hello-world || true ) &&
         # return 0 even if docker installation will fail
         ( systemctl enable docker || true ) &&
+        exit 0
+      ) &&
+      echo "Installing K8s ..." &&
+      (
+        KUBERNETES_VERSION=1.35 &&
+        apt-get update &&
+        # apt-transport-https may be a dummy package; if so, you can skip that
+        # package
+        apt-get install -y \
+          apt-transport-https \
+          ca-certificates \
+          curl \
+          gpg \
+          &&
+        sudo mkdir -p -m 755 /etc/apt/keyrings &&
+        curl -fsSL \
+          https://pkgs.k8s.io/core:/stable:/v${KUBERNETES_VERSION}/\
+deb/Release.key |
+          sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg &&
+        echo "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg]" \
+          "https://pkgs.k8s.io/core:/stable:/v${KUBERNETES_VERSION}/deb/ /" |
+          sudo tee /etc/apt/sources.list.d/kubernetes.list &&
+        sudo apt-get update &&
+        sudo apt-get install -y kubelet kubeadm kubectl &&
+        sudo apt-mark hold kubelet kubeadm kubectl &&
+        sudo systemctl enable --now kubelet &&
         exit 0
       ) &&
       echo &&
