@@ -489,8 +489,7 @@ EOF2
     (
       echo &&
       (
-        exit 0 &&
-        echo "Installing docker ..." &&
+        echo "Installing Docker (repo) ..." &&
         # install packages to allow apt to use a repository over HTTPS
         # DEBIAN_FRONTEND=noninteractive apt-get \
         #   install -y --no-install-recommends \
