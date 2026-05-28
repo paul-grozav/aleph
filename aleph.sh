@@ -529,12 +529,13 @@ EOF
         ) &&
         sudo apt-get update &&
         sudo apt-get install -y --no-install-recommends \
-          docker-ce \
-          docker-ce-cli \
+          ` # Required for k8s ` \
           containerd.io \
-          docker-buildx-plugin \
-          docker-compose-plugin \
           &&
+          # docker-ce \
+          # docker-ce-cli \
+          # docker-buildx-plugin \
+          # docker-compose-plugin \
 
 
         # docker-compose ???
@@ -545,10 +546,10 @@ EOF
         # /usr/bin/cgroupfs-mount
         # /usr/bin/dockerd -H unix://
 
-        docker run --rm hello-world &&
-        ( docker image rm hello-world || true ) &&
-        # return 0 even if docker installation will fail
-        ( systemctl enable docker || true ) &&
+        # docker run --rm hello-world &&
+        # ( docker image rm hello-world || true ) &&
+        # # return 0 even if docker installation will fail
+        # ( systemctl enable docker || true ) &&
         exit 0
       ) &&
       echo "Installing K8s ..." &&
