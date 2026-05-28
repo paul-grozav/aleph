@@ -489,23 +489,45 @@ EOF2
       (
         echo "Installing docker ..." &&
         # install packages to allow apt to use a repository over HTTPS
-        DEBIAN_FRONTEND=noninteractive apt-get \
-          install -y --no-install-recommends \
-          apt-transport-https ca-certificates curl gnupg-agent \
-          software-properties-common &&
-        # Add Docker's official GPG key
-        curl -fsSL https://download.docker.com/linux/debian/gpg |
-          apt-key add - &&
-        # set up the stable docker repository
-        add-apt-repository \
-          "deb [arch=amd64] https://download.docker.com/linux/debian \
-          $(lsb_release -cs) \
-          stable" &&
-        # Get list of docker packages from repository
-        apt-get update &&
-        # Install docker daemon and client
-        apt-get install -y docker-ce docker-ce-cli containerd.io &&
+        # DEBIAN_FRONTEND=noninteractive apt-get \
+        #   install -y --no-install-recommends \
+        #   apt-transport-https ca-certificates curl gnupg-agent \
+        #   software-properties-common &&
+        # # Add Docker's official GPG key
+        # curl -fsSL https://download.docker.com/linux/debian/gpg |
+        #   apt-key add - &&
+        # # set up the stable docker repository
+        # add-apt-repository \
+        #   "deb [arch=amd64] https://download.docker.com/linux/debian \
+        #   $(lsb_release -cs) \
+        #   stable" &&
+        # # Get list of docker packages from repository
+        # apt-get update &&
+        # # Install docker daemon and client
+        # apt-get install -y docker-ce docker-ce-cli containerd.io &&
         # Docker install will fail at pkg: aufs-dkms
+
+        # Add Docker's official GPG key:
+        sudo apt update &&
+        sudo apt install -y ca-certificates curl &&
+        sudo install -m 0755 -d /etc/apt/keyrings &&
+        sudo curl -fsSL https://download.docker.com/linux/debian/gpg \
+          -o /etc/apt/keyrings/docker.asc &&
+        sudo chmod a+r /etc/apt/keyrings/docker.asc &&
+
+        # Add the repository to Apt sources:
+        ( sudo tee /etc/apt/sources.list.d/docker.sources <<EOF
+Types: deb
+URIs: https://download.docker.com/linux/debian
+Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
+Components: stable
+Architectures: $(dpkg --print-architecture)
+Signed-By: /etc/apt/keyrings/docker.asc
+EOF
+        ) &&
+        sudo apt update &&
+
+
         # docker-compose ???
 
         # Trying to start docker in chroot inside container
@@ -515,9 +537,9 @@ EOF2
         # /usr/bin/dockerd -H unix://
 
         docker run --rm hello-world &&
-        docker image rm hello-world ;
+        ( docker image rm hello-world || true ) &&
         # return 0 even if docker installation will fail
-        systemctl enable docker ;
+        ( systemctl enable docker || true ) &&
         exit 0
       ) &&
       echo &&
