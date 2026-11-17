@@ -1104,10 +1104,15 @@ function core__publish()
 {
   # The distribution_content folder is created in previous pipeline stages/jobs.
   mv distribution_content public/distribution_content &&
-  # Put version in index.html
-  sed -i s/__ALEPH_VERSION__/${version}/g ${project_root}/public/index.html &&
   # Copy latest version to public folder
   cp ${project_root}/version.txt ${project_root}/public/version.txt &&
+  # Save build date UTC
+  date -u +"%Y-%m-%d %H:%M:%S.%N" > ${project_root}/public/build_date_utc.txt &&
+  # Put version and build date in index.html
+  sed -i s/__ALEPH_VERSION__/${version}/g ${project_root}/public/index.html &&
+  sed -i s/__ALEPH_BUILD_DATE_UTC__/$(cat \
+    ${project_root}/public/build_date_utc.txt)/g \
+    ${project_root}/public/index.html &&
   true
 } &&
 

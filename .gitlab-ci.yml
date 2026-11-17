@@ -2,31 +2,37 @@
 # Author: Tancredi-Paul Grozav <paul@grozav.info>
 # ============================================================================ #
 # This is the only place where the base image version is defined.Then read in sh
-image: debian:13.6
+# See latest version in:
+# 1. https://www.debian.org/News/
+# 2. https://hub.docker.com/_/debian
+image: debian:13.7
+# TODO: Move this to .github/workflows/publish.yml or it's own file like
+#   version.txt. The rest of this file is no longer used, unless forked on
+#   GitLab.
 # ============================================================================ #
 core__build__pxe_kernel:
   stage: build
   tags:
-    - container
-    - linux
+  - container
+  - linux
   script:
-    - ./aleph.sh --core__build__pxe_kernel
+  - ./aleph.sh --core__build__pxe_kernel
   artifacts:
     paths:
-      - distribution_content/aleph.krnl
-      - distribution_content/aleph.ird
+    - distribution_content/aleph.krnl
+    - distribution_content/aleph.ird
     expire_in: 1 hour
 # ============================================================================ #
 core__build__squashfs:
   stage: build
   tags:
-    - container
-    - linux
+  - container
+  - linux
   script:
-    - ./aleph.sh --core__build__squashfs
+  - ./aleph.sh --core__build__squashfs
   artifacts:
     paths:
-      - distribution_content/aleph.sfs
+    - distribution_content/aleph.sfs
     expire_in: 1 hour
       # depending on your build setup it's most likely a good idea to cache
       #   outputs to reduce the build time:
@@ -37,28 +43,28 @@ core__build__squashfs:
 core__build__iso:
   stage: build
   tags:
-    - container
-    - linux
+  - container
+  - linux
   needs:
-    - core__build__squashfs
+  - core__build__squashfs
   script:
-    - ./aleph.sh --core__build__iso
+  - ./aleph.sh --core__build__iso
   artifacts:
     paths:
-      - distribution_content/aleph.iso
+    - distribution_content/aleph.iso
     expire_in: 1 hour
 # ============================================================================ #
 pages:
   stage: deploy
   needs:
-    - core__build__pxe_kernel
-    - core__build__squashfs
-    - core__build__iso
+  - core__build__pxe_kernel
+  - core__build__squashfs
+  - core__build__iso
   script:
-    - ./aleph.sh --core__publish
+  - ./aleph.sh --core__publish
   artifacts:
     paths:
-      - public/
+    - public/
     expire_in: 1 hour
 # ============================================================================ #
 
