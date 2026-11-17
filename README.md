@@ -2,5 +2,5 @@
 
 Aleph GNU/Linux distribution
 
-Website: https://tancredi-paul-grozav.gitlab.io/aleph/
+Website: https://paul-grozav.github.io/aleph/
 
